@@ -1,31 +1,43 @@
 #pragma once
+
+#include "idGenerator.h"
+
+using namespace std;
+
 class Session
 {
 private:
     /* data */
 public:
-    std::string id;
-    std::map<std::string, std::string> values;
+    string id;
+    map<string, string> values;
     bool create;
-    bool isEmpty(){
-        return id.empty() ? true : false;
+    bool deleted = false;
+    bool isEmpty() { return id.empty() ? true : false; }
+    void addValue(string key, string value) { values.insert(make_pair(key, value)); }
+    void modifyValue(string key, string value) { values[key] = value; }
+    void createSession()
+    {
+        if (isEmpty())
+        {
+            id = idGenerator::generateIDstr();
+            create = true;
+        }
     }
-    void addValue(std::string key, std::string value){
-        values.insert(make_pair(key, value));
+    void destroySession()
+    {
+        id = "";
+        deleted = true;
+        values.clear();
     }
-    void modifyValue(std::string key, std::string value){
-        values[key] = value;
-    }
-    std::string operator[](std::string key){
-        return values[key];
-    }
-    
-    Session(std::string id_f){id = id_f;}
-    Session(std::string id_f, std::string key, std::string value){
-        id = id_f;
+    string &operator[](string key) { return values[key]; }
+
+    Session() { create = false; }
+    Session(string id_f) : id(id_f) { create = true; }
+    Session(string id_f, string key, string value)
+        : id(id_f)
+    {
         values.insert(make_pair(key, value));
         create = true;
     }
 };
-
-

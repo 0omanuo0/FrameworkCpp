@@ -9,6 +9,7 @@
 
 const std::string GET = "GET";
 const std::string POST = "POST";
+const std::string DELETE = "DELETE";
 
 class httpMethods
 {
@@ -40,12 +41,9 @@ public:
 
     httpParams params;
 
-    httpMethods()
-    {
-    }
+    httpMethods(){}
 
-    httpMethods(std::string type_h)
-        : method(type_h){};
+    httpMethods(std::string req){loadParams(req);};
     
 
     int loadParams(const std::string &request);

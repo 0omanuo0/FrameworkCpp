@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <link rel="stylesheet" href="{{urlfor('/templates/main.css')}}">
+    <script type="text/javascript" src="{{urlfor('/templates/main.js')}}"></script>
+</head>
+
+
+<body>
+    <div class="main">
+        <h1>Hola, <a href="/user/{{user}}">{{user}}</a>, <a href="/logout">Logout</a> </h1>
+    </div>
+    <section class="main" style="margin-top:30px;">
+        <h2>Redactar post</h2>
+        <form action="/" method="post" class="p_section" style="margin-bottom: 20px;">
+            <label for="name">Text:</label>
+            <input type="text" id="post" name="post">
+            <input type="submit" value="Submit">
+        </form>
+    </section>
+    <section class="posts">
+    {% for post in posts %}
+        {% include "templates/post.html" %}
+    {% endfor %}
+    </section>
+</body>
+
+</html>

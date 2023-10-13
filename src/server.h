@@ -9,104 +9,142 @@
 #include <thread>
 #include <functional>
 #include <vector>
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+#include <fstream>
+#include <netdb.h>
+#include <filesystem>
+
 #include "httpMethods.h"
 #include "session.h"
+#include "httpProto.h"
+#include "idGenerator.h"
+#include "args.h"
+#include "templating.h"
 
-const std::string SERVER = "Soria/0.0.1b (Unix)";
+#ifndef SERVER_VALUES
+#define SERVER_VALUES
 
-const std::string REDIRECT = "VOID*REDIRECT";
+#define BUFFER_SIZE 1024
+const string SERVER_VERSION = "Soria/0.0.2b (Unix)";
+const string REDIRECT = "VOID*REDIRECT";
 
-const std::map<std::string, std::string> content_type = {
+#endif
+
+#ifndef FILE_TYPE
+#define FILE_TYPE
+const map<string, string> content_type = {
     {"js", "application/javascript"},
     {"css", "text/css"},
     {"html", "text/html"},
-    {"txt", "text/plain"}
-    };
+    {"txt", "text/plain"}};
+#endif
 
-class Args
+#pragma region structs
+struct SSLcontext
 {
-private:
-    /* data */
-public:
-    const std::vector<std::string> vars;
-    const std::string query;
-    httpMethods request;
-    Session session;
-    int socket;
-    Args(std::vector<std::string> vars_f, httpMethods method_f, Session session_f)
-        : vars(vars_f), request(method_f), session(session_f) {}
+    string certificate;
+    string private_key;
 };
+struct Route
+{
+    string path;
+    vector<string> methods;
+    function<string(Args &)> handler;
+};
+struct RouteFile
+{
+    string path;
+    string type;
+};
+#pragma endregion
 
+class Templating;
+using namespace std;
 class HttpServer
 {
 private:
-    int handleRequest(int socket);
-    // Definición de la estructura Route
-    struct Route
-    {
-        std::string path;
-        std::vector<std::string> methods;
-        std::function<std::string(Args &)> handler;
-    };
+    bool HTTPS = false;
+    SSLcontext context;
+    SSL_CTX *ssl_ctx;
+    struct in_addr ip_host_struct;
+    //void __handle_client(int clientSocket);
 
-    struct RouteFolder
-    {
-        std::string path;
-        std::string folder_path;
-    };
-    struct RouteFile
-    {
-        std::string path;
-        std::string type;
-    };
+    struct sockaddr_in serverAddress, clientAddress;
+    int addrlen = sizeof(serverAddress);
 
-    std::vector<Route> routes;
-    std::vector<RouteFile> routes_files;
-    std::vector<RouteFolder> routes_folder;
+    vector<Route> routes;
+    vector<RouteFile> routesFile;
+    vector<Session> sessions;
+    string __not_found = "<h1>NOT FOUND</h1>";
 
-    void createSession();
-    std::string __render_line(std::string line, std::map<std::string, std::string> data = std::map<std::string, std::string>());
+    Templating *template_render;
+
+    int __find_match_session(string id);
+    Session __get_session(int index);
+
+    int __handle_request(int socket, SSL *ssl);
+
+    string __response_create(const string &response, Session &session);
+    int __response_file(SSL *ssl, int socket, const string &path, const string &type);
+    //int __response_folder(SSL *ssl, const string &response, Session &session);
+
+    int __send_response(SSL *ssl, int socket, const string &response);
+    int __send_response(SSL *ssl, int socket, const vector<string> &response);
+    void __startListenerSSL();
+    void __startListener();
+
+    void addRouteFile(const string &endpoint, const string &extension);
+    Session setNewSession(Session session);
 
 public:
     int port = 8080;
     int serverSocket;
-    struct sockaddr_in serverAddress, clientAddress;
-    char buffer[1024] = {0};
-    int addrlen = sizeof(serverAddress);
+    char *host;
 
     int MAX_CONNECTIONS = 10;
-    std::vector<Session> sessions;
-    Session findMatchSession(std::string id);
+    string default_session_name = "SessionID";
+    /// @brief Constructor of the server
+    HttpServer();
+    /// @brief Constructor of the server, set the port and the max connections (default 10)
+    HttpServer(int port_server, char *host = "0.0.0.0", int max_connections = 10);
+    /// @brief Constructor of the server, set the port, the SSL context and the max connections (default 10)
+    HttpServer(int port_server, const string SSLcontext_server[], char *host = "0.0.0.0", int max_connections = 10);
 
-    HttpServer(int port_server) : port(port_server) {}
+    /// @brief Function to start the listener
+    void startListener();
 
-    void startListener(int port);
+    /// @brief Function to setup the server
+    /// @return If dont return 0 the server is not setup correctly
     int setup();
 
-    static int sendResponse(int socket, std::string response);
-    int sendResponse(int socket, std::vector<std::string> response);
+    /// @brief Function to set the content of the 404 page
+    /// @param content The content of the 404 page
+    void setNotFound(string content) { __not_found = content; };
 
-    void addRoute(const std::string &path,
-                  std::function<std::string(Args &)> handler,
-                  std::vector<std::string> methods);
-    void addRoute(const std::string &path,
-                  std::function<std::string(Args &)> handler,
-                  std::vector<std::string> methods,
-                  std::vector<std::string> vars);
-    void addRoute(const std::string &path,
-                  std::function<std::string(Args &)> handler,
-                  std::vector<std::string> methods,
-                  std::vector<std::string> vars,
-                  std::string query);
+    /// @brief Function create a new route to the server
+    /// @param path Route to the endpoint in browser
+    /// @param handler The function to handle the request
+    /// @param methods The methods allowed to access the endpoint
+    void addRoute(const string &path,
+                  function<string(Args &)> handler,
+                  vector<string> methods);
 
-    void addrouteFile(const std::string &path, std::string type);
-    void addFilesHandler(const std::string &path, const std::string &folder_path);
+    /// @brief Function add a file to the server
+    /// @param endpoint Route to the file, also the route to the file in the browse
+    void urlfor(const string &endpoint);
 
-    void urlfor(const std::string &endpoint);
-    std::string render(const std::string &route, std::map<std::string, std::string> data = std::map<std::string, std::string>());
+    /// @brief Function to render a jinja or html file
+    /// @param route Route to the file
+    /// @param data Content to pass to the file
+    /// @return The rendered file as string to send to the client
+    string Render(const string &route, map<string, string> data = map<string, string>());
 };
-
-std::string Redirect(int socket, std::string url, std::vector<std::string> cookie = {});
-std::string findCookie(HttpServer &server);
+/// @brief Function to redirect to a url
+/// @param url The endpoint to redirect to
+/// @return The rendered file as string to send to the client
+string Redirect(string url);
+/// @brief Function to find the cookie
+string findCookie(HttpServer &server);
 
 #endif // SERVER_H

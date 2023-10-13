@@ -1,6 +1,10 @@
 #vscode
 .vscode/
 texto/
+prueba/
+files/
+bin/
+
 
 # Prerequisites
 *.d

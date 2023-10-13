@@ -55,7 +55,9 @@ std::string httpProtoResponse::createResponseString(std::string type)
         headers.insert(std::make_pair("Content-Length", std::to_string(length)));
 
     if (headers["Content-Type"].empty())
-        headers.insert(std::make_pair("Content-Type", "text/html"));
+        headers["Content-Type"] = "text/html";
+    if (headers["Content-Length"].empty())
+        headers["Content-Length"] = "0";
 
     headers.insert(std::make_pair("Server", server));
 

@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="{{urlfor('/templates/main.css')}}">
+    <script type="text/javascript" src="{{urlfor('/templates/main.js')}}"></script>
+</head>
+
+
+<body>
+    <div class="main">
+        <h1>Hola, {{user}}, <a href="/logout">Logout</a> </h1>
+    </div>
+    <p>
+        Tu contraseña: {{pass}}
+    </p>
+</body>
+
+</html>
