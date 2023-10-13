@@ -6,10 +6,7 @@
 
 class idGenerator
 {
-    private:
-        /* data */
     public:
-        idGenerator(/* args */);
         static int generateID(){return atoi(generateIDstr().c_str());}
         static std::string generateIDstr(){
             char id[32];

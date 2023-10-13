@@ -85,13 +85,14 @@ private:
 
     int __handle_request(int socket, SSL *ssl);
 
-    int __response_create(SSL *ssl, const string &response, Session &session);
-    int __response_file(SSL *ssl, const string &path, const string &type);
-    int __response_folder(SSL *ssl, const string &response, Session &session);
+    string __response_create(const string &response, Session &session);
+    int __response_file(SSL *ssl, int socket, const string &path, const string &type);
+    //int __response_folder(SSL *ssl, const string &response, Session &session);
 
-    int __send_response(SSL *ssl, const string &response);
-    int __send_response(SSL *ssl, const vector<string> &response);
+    int __send_response(SSL *ssl, int socket, const string &response);
+    int __send_response(SSL *ssl, int socket, const vector<string> &response);
     void __startListenerSSL();
+    void __startListener();
 
     void addRouteFile(const string &endpoint, const string &extension);
     Session setNewSession(Session session);
@@ -140,15 +141,9 @@ public:
     string Render(const string &route, map<string, string> data = map<string, string>());
 };
 /// @brief Function to redirect to a url
-/// @param socket The socket to send the response
 /// @param url The endpoint to redirect to
 /// @return The rendered file as string to send to the client
-string Redirect(int socket, string url);
-/// @brief Function to redirect to a url
-/// @param ssl The SSL pointer to send the response
-/// @param url The endpoint to redirect to
-/// @return The rendered file as string to send to the client
-string Redirect(SSL *ssl, string url);
+string Redirect(string url);
 /// @brief Function to find the cookie
 string findCookie(HttpServer &server);
 

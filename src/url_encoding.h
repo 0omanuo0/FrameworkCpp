@@ -1,3 +1,5 @@
+
+
 #ifndef ENCODE_H_
 #define ENCODE_H_
 
@@ -5,53 +7,58 @@
 #include <string>
 #include <regex>
 
-std::string decodeURIComponent(std::string encoded) {
-
-    std::string decoded = encoded;
-    std::smatch sm;
-    std::string haystack;
-
-    int dynamicLength = decoded.size() - 2;
-
-    if (decoded.size() < 3) return decoded;
-
-    for (int i = 0; i < dynamicLength; i++)
-    {
-
-        haystack = decoded.substr(i, 3);
-
-        if (std::regex_match(haystack, sm, std::regex("%[0-9A-F]{2}")))
-        {
-            haystack = haystack.replace(0, 1, "0x");
-            std::string rc = {(char)std::stoi(haystack, nullptr, 16)};
-            decoded = decoded.replace(decoded.begin() + i, decoded.begin() + i + 3, rc);
-        }
-
-        dynamicLength = decoded.size() - 2;
-
-    }
-
-    return decoded;
-}
-
-std::string encodeURIComponent(std::string decoded)
+class UrlEncoding
 {
-
-    std::ostringstream oss;
-    std::regex r("[!'\\(\\)*-.0-9A-Za-z_~]");
-
-    for (char &c : decoded)
+public:
+    static std::string decodeURIComponent(const std::string &url)
     {
-        if (std::regex_match((std::string){c}, r))
+        std::ostringstream decoded;
+        for (std::size_t i = 0; i < url.length(); ++i)
         {
-            oss << c;
+            if (url[i] == '%' && i + 2 < url.length())
+            {
+                char hex1 = url[i + 1];
+                char hex2 = url[i + 2];
+                if (isxdigit(hex1) && isxdigit(hex2))
+                {
+                    std::istringstream hexStream(std::string() + hex1 + hex2);
+                    int hexValue = 0;
+                    hexStream >> std::hex >> hexValue;
+                    decoded << static_cast<char>(hexValue);
+                    i += 2;
+                }
+                else
+                    decoded << url[i];
+            }
+            else if (url[i] == '+')
+                decoded << ' ';
+            else
+                decoded << url[i];
         }
-        else
-        {
-            oss << "%" << std::uppercase << std::hex << (0xff & c);
-        }
+        return decoded.str();
     }
-    return oss.str();
-}
+
+    static std::string encodeURIComponent(const std::string &input)
+    {
+        std::string encoded;
+        const char *hex = "0123456789ABCDEF";
+
+        for (char c : input)
+        {
+            if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~')
+                encoded += c;
+            else if (c == ' ')
+                encoded += '+';
+            else
+            {
+                encoded += '%';
+                encoded += hex[c >> 4];
+                encoded += hex[c & 15];
+            }
+        }
+
+        return encoded;
+    }
+};
 
 #endif

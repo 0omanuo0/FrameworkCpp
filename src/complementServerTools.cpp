@@ -11,7 +11,7 @@
     
 //     return REDIRECT;
 // }
-std::string Redirect(SSL *ssl, std::string url){///////////areglas cookie
+std::string Redirect(std::string url){///////////areglas cookie
     return REDIRECT + url;
 }
 

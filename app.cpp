@@ -1,6 +1,7 @@
 #include <iostream>
 #include "src/server.h"
 #include "users.hpp"
+#include "src/usersdb.h"
 
 using namespace std;
 
@@ -9,38 +10,74 @@ const int MAX_CONNECTIONS = 500;
 
 string HTTPScontext[] = {"secrets/cert.pem", "secrets/key.pem"};
 
-vector<user> USERS = {{"manu", "asdf"}, {"user2", "pass2"}};
-vector<post> POSTS = {{USERS[0], "post1"}, {USERS[1], "post2"}};
 
 HttpServer server(PORT, HTTPScontext, "server-manu.local", MAX_CONNECTIONS);
+UsersDB DATABASE("secrets/users.db");
 
 string home(Args &args)
 {
-    if(args.request.method == POST){
-        if(args.session["logged"] == "true" && !args.session.isEmpty()){
-            POSTS.push_back({getUser(args.session["user"], USERS), args.request.content["post"]});
+    if (args.request.method == POST)
+    {
+        if (args.session["logged"] == "true" && !args.session.isEmpty())
+        {
+            DATABASE["POSTS"].insertRow({{"autor", args.session["user"]}, {"contenido", args.request.content["post"]}});
+            vector<post> POSTS;
+            try
+            {
+                for (size_t i = 1; i <= DATABASE["POSTS"].countRows(); i++)
+                {
+                    unordered_map post1 = DATABASE["POSTS"].getByID(to_string(i));
+                    post p = {{post1["autor"]}, post1["contenido"]};
+                    POSTS.push_back(p);
+                }
+            }
+            catch (const std::exception &e)
+            {
+                std::cerr << e.what() << '\n';
+            }
+
             return server.Render("templates/home_logged.html", {{"user", args.session["user"]}, {"posts", posts_to_string(POSTS)}});
         }
         else
             return server.Render("templates/home.html");
-        return Redirect(args.ssl, "/");
+        return Redirect("/");
     }
-    else if(args.request.method == GET){
+    else if (args.request.method == GET)
+    {
         if (args.session["logged"] == "true" && !args.session.isEmpty())
+        {
+            vector<post> POSTS;
+            try
+            {
+                for (size_t i = 1; i <= DATABASE["POSTS"].countRows(); i++)
+                {
+                    unordered_map post1 = DATABASE["POSTS"].getByID(to_string(i));
+                    post p = {{post1["autor"]}, post1["contenido"]};
+                    POSTS.push_back(p);
+                }
+            }
+            catch (const std::exception &e)
+            {
+                std::cerr << e.what() << '\n';
+            }
+
             return server.Render("templates/home_logged.html", {{"user", args.session["user"]}, {"posts", posts_to_string(POSTS)}});
-        else 
+        }
+        else
             return server.Render("templates/home.html");
     }
 }
 
-string user_account(Args &args){
+string user_account(Args &args)
+{
     if (args.session["logged"] == "true" && args.vars[0] == args.session["user"])
-        return server.Render("templates/user.html", {{"user", args.vars[0]}, {"pass", getUser(args.vars[0], USERS).pass}} );
-    else 
-        return Redirect(args.ssl, "/login");
+        return server.Render("templates/user.html", {{"user", args.vars[0]}, {"pass", DATABASE.getUser(args.vars[0])[2]}});
+    else
+        return Redirect("/login");
 }
 
-string images(Args &args){
+string images(Args &args)
+{
     return server.Render("templates/image.html", {{"id", args.vars[0]}});
 }
 
@@ -49,21 +86,34 @@ string login(Args &args)
     if (args.request.method == GET)
     {
         if (args.session["logged"] == "true" && !args.session.isEmpty())
-            return Redirect(args.ssl, "/");
+            return Redirect("/");
         return server.Render("templates/login.html");
     }
     else if (args.request.method == POST)
     {
-        for(auto &user : USERS){
-            if(args.request.content["fpass"] == user.pass && args.request.content["fname"] == user.name){
-                args.session.createSession();
-                args.session["logged"] = "true";
-                args.session["user"] = user.name;
-                return Redirect(args.ssl, "/");
+        vector<vector<string>> USERS;
+        try
+        {
+            for (auto u : DATABASE.getUsersName())
+            {
+                USERS.push_back(DATABASE.getUser(u));
             }
+            for (auto &user : USERS)
+            {
+                if (crypto_lib::calculateSHA512(args.request.content["fpass"]) == user[2] && args.request.content["fname"] == user[1])
+                {
+                    args.session.createSession();
+                    args.session["logged"] = "true";
+                    args.session["user"] = user[1];
+                    return Redirect("/");
+                }
+            }
+            return server.Render("templates/login.html", {{"error", "true"}});
         }
-        return server.Render("templates/login.html", {{"error", "true"}});
-
+        catch (const std::exception &e)
+        {
+            std::cerr << e.what() << '\n';
+        }
     }
     return "error";
 }
@@ -72,11 +122,28 @@ string logout(Args &args)
 {
     if (args.session["logged"] == "true" && !args.session.isEmpty())
         args.session.destroySession();
-    return Redirect(args.ssl, "/login");
+    return Redirect("/login");
 }
 
 int main(int argc, char **argv)
 {
+    try
+    {
+
+        // DATABASE["POSTS"].insertRow({{"autor", "manu"}, {"contenido", "HOLA :D"}, {"FECHA", "2022-01-01"}});
+        // DATABASE["POSTS"].insertRow({{"autor", "juan"}, {"contenido", "AAAAAAA"}, {"FECHA", "2022-01-01"}});
+        // DATABASE["POSTS"].insertRow({{"autor", "manu"}, {"contenido", "asdf"}, {"FECHA", "2022-01-01"}});
+        // DATABASE["POSTS"].insertRow({{"autor", "rich"}, {"contenido", "adios"}, {"FECHA", "2022-01-01"}});
+
+        DATABASE.insertUser("manu", {{"pass", crypto_lib::calculateSHA512("asdf1234")}});
+        DATABASE.insertUser("juan", {{"pass", crypto_lib::calculateSHA512("123")}});
+        DATABASE.insertUser("rich", {{"pass", crypto_lib::calculateSHA512("456")}});
+    }
+    catch (const std::exception &e)
+    {
+        std::cerr << e.what() << '\n';
+    }
+
     // Ruta sin variables
     server.addRoute("/home", home, {GET, POST});
     server.addRoute("/", home, {GET, POST});

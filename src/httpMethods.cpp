@@ -1,5 +1,6 @@
 #include "httpMethods.h"
 #include <iostream>
+#include "url_encoding.h"
 
 
 int httpMethods::loadParams(const std::string &request)

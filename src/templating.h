@@ -22,25 +22,6 @@ class HttpServer;
 using json = nlohmann::json;
 using namespace std;
 
-struct templating_cache;
-struct expression_cache{
-    string content;
-    function<string(const map<string, string> &)> fucntion_exists;
-};
-
-struct statement_cache{
-    string content;
-    function<vector<string>(const map<string, string> &)> fucntion_exists;
-    templating_cache *block;
-};
-
-struct templating_cache{
-    string content_pre;
-    statement_cache *statements;
-    expression_cache *expressions;
-    templating_cache *content_post;
-};
-
 class Templating
 {
 private:

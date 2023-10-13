@@ -28,6 +28,8 @@ HttpServer::HttpServer(int port_server, char *hostname, int max_connections)
     host = hostname;
     // Convierte la dirección IP en formato de cadena a representación binaria
     ip_host_struct = hostnameToIp(host);
+
+    template_render = new Templating();
     template_render->server = this;
 }
 HttpServer::HttpServer(int port_server, const string SSLcontext_server[], char *hostname, int max_connections)
@@ -90,14 +92,41 @@ void HttpServer::__startListenerSSL()
 }
 
 
+void HttpServer::__startListener()
+{
+    vector<thread> threads;
+
+    while (true)
+    {
+        // Aceptar una conexión entrante
+        sockaddr_in clientAddress;
+        socklen_t clientAddressSize = sizeof(clientAddress);
+
+        int clientSocket = accept(serverSocket, reinterpret_cast<sockaddr *>(&clientAddress), &clientAddressSize);
+        if (clientSocket == -1)
+        {
+            cerr << "Error al aceptar la conexión entrante" << endl;
+            continue;
+        }
+
+        // Crear un hilo para manejar la comunicación con el cliente
+        SSL *ssl = NULL;
+        thread thread(&HttpServer::__handle_request, this, move(clientSocket), move(ssl));
+        threads.push_back(move(thread));
+        // Eliminar hilos terminados
+        threads.erase(remove_if(threads.begin(), threads.end(), [](const std::thread &t)
+                                { return !t.joinable(); }),
+                      threads.end());
+    }
+}
+
 
 void HttpServer::startListener()
 {
     if (HTTPS)
         __startListenerSSL();
     else
-        return;
-    // __startListener(port);
+        __startListener();
 }
 
 int HttpServer::setup()
@@ -153,8 +182,10 @@ int HttpServer::setup()
         cerr << "Error al escuchar las conexiones" << endl;
         return 1;
     }
-
-    cout << "Servidor https://" << host << ":" << port << " en ejecución " << endl;
+    if(HTTPS)
+        cout << "Servidor https://" << host << ":" << port << " en ejecución " << endl;
+    else
+        cout << "Servidor http://" << host << ":" << port << " en ejecución " << endl;
     return 0;
 }
 
@@ -170,7 +201,14 @@ void HttpServer::addRouteFile(const string &endpoint, const string &extension)
     for(auto &route : routesFile)
         if(route.path == endpoint)
             return;
-    routesFile.push_back({endpoint, content_type.find(extension)->second});
+    try
+    {
+        routesFile.push_back({endpoint, content_type.find(extension)->second});
+    }
+    catch(const std::exception& e)
+    {
+        routesFile.push_back({endpoint, "application/force-download"});
+    }   
 }
 void HttpServer::urlfor(const string &endpoint)
 {

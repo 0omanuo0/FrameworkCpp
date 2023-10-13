@@ -51,28 +51,79 @@ bool __route_contains_variables(const std::string &routePath)
     return (routePath.find('<') != std::string::npos && routePath.find('>') != std::string::npos);
 }
 
-std::string __recv(SSL *ssl)
+// std::string __recv(SSL *ssl)
+// {
+//     char buffer[BUFFER_SIZE] = {0};
+//     memset(buffer, 0, sizeof(buffer));
+//     if (SSL_read(ssl, buffer, sizeof(buffer) - 1) < 0)
+//     {
+//         std::cerr << "Error al leer la petición HTTPS" << std::endl;
+//         return std::string();
+//     }
+//     return std::string(buffer);
+// }
+std::string __recv(SSL *ssl, int socket)
 {
-    char buffer[BUFFER_SIZE] = {0};
-    memset(buffer, 0, sizeof(buffer));
-    if (SSL_read(ssl, buffer, sizeof(buffer) - 1) < 0)
+    char buffer[BUFFER_SIZE];
+    std::string data;
+    int total = 0;
+
+    while (true)
     {
-        std::cerr << "Error al leer la petición HTTPS" << std::endl;
-        return std::string();
+        int nRecvd;
+
+        if (ssl != NULL)
+            nRecvd = SSL_read(ssl, buffer, sizeof(buffer));
+        else if (socket != NULL)
+            nRecvd = recv(socket, buffer, sizeof(buffer), 0);
+        else
+        {
+            // Indica un error, ya que ni SSL ni socket están disponibles
+            std::cerr << "Ni SSL ni socket disponibles" << std::endl;
+            return std::string();
+        }
+
+        if (nRecvd <= 0)
+        {
+            int error;
+            if (ssl != NULL)
+                error = SSL_get_error(ssl, nRecvd);
+            else if (socket != NULL)
+                error = errno; // Usamos errno para obtener el código de error del sistema
+
+            if (error == SSL_ERROR_WANT_READ)
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                continue;
+            }
+            else if (error == SSL_ERROR_ZERO_RETURN || error == SSL_ERROR_SYSCALL || error == 0)
+                // El otro extremo ha cerrado la conexión o se ha producido un error
+                break;
+            else
+            {
+                std::cerr << "Error al leer la petición" << std::endl;
+                return std::string();
+            }
+        }
+
+        data.append(buffer, nRecvd);
+
+        if (nRecvd < sizeof(buffer))
+            // No se pueden leer más datos, termina el bucle
+            break;
     }
-    return std::string(buffer);
+    return data;
 }
 
-int HttpServer::__response_create(SSL *ssl, const std::string &response, Session &session)
+string HttpServer::__response_create(const std::string &response, Session &session)
 {
     // respuestas https
     std::string response_with_header;
     httpProtoResponse response_server;
     if (response.empty())
     {
-        std::string respNOTFOUND = "<h1>NOT FOUND</h1>";
-        response_server.length = respNOTFOUND.length();
-        __send_response(ssl, response_server.defaultNotFound() + respNOTFOUND);
+        response_server.length = __not_found.length();
+        return response_server.defaultNotFound() + __not_found;
     }
     else
     {
@@ -101,11 +152,10 @@ int HttpServer::__response_create(SSL *ssl, const std::string &response, Session
             response_with_header += response;
         }
     }
-    __send_response(ssl, response_with_header);
-    return 0;
+    return response_with_header;
 }
 
-int HttpServer::__response_file(SSL *ssl, const std::string &path, const std::string &type)
+int HttpServer::__response_file(SSL *ssl, int socket, const std::string &path, const std::string &type)
 {
     std::vector<std::string> data_to_send = std::vector<std::string>();
     httpProtoResponse response_serv = httpProtoResponse();
@@ -114,7 +164,7 @@ int HttpServer::__response_file(SSL *ssl, const std::string &path, const std::st
     if (!file.is_open() && !file.good())
     {
         std::cerr << "Error al abrir el archivo: " << path << std::endl;
-        __send_response(ssl, response_serv.defaultNotFound());
+        __send_response(ssl, socket, response_serv.defaultNotFound());
         return -1;
     }
 
@@ -128,7 +178,7 @@ int HttpServer::__response_file(SSL *ssl, const std::string &path, const std::st
     if (!file.read(buffer_f.data(), fileSize))
     {
         std::cerr << "Error al leer el archivo: " << path << std::endl;
-        __send_response(ssl, response_serv.defaultNotFound());
+        __send_response(ssl, socket, response_serv.defaultNotFound());
         return -1;
     }
 
@@ -140,37 +190,67 @@ int HttpServer::__response_file(SSL *ssl, const std::string &path, const std::st
 
     data_to_send.push_back(response_serv.defaultOK());
     data_to_send.push_back(std::string(buffer_f.begin(), buffer_f.end()));
-    __send_response(ssl, data_to_send);
+    __send_response(ssl, socket, data_to_send);
     return 0;
 }
 
-int HttpServer::__send_response(SSL *ssl, const std::vector<std::string> &response)
+int HttpServer::__send_response(SSL *ssl, int socket, const std::vector<std::string> &response)
 {
-    // Enviar el encabezado y el contenido del archivo al cliente
-    if (SSL_write(ssl, response[0].c_str(), response[0].size()) < 0)
+    if (ssl != NULL)
     {
-        std::cerr << "Error al enviar el encabezado HTTP" << std::endl;
-        return -1;
-    }
+        // Enviar el encabezado y el contenido del archivo al cliente
+        if (SSL_write(ssl, response[0].c_str(), response[0].size()) < 0)
+        {
+            std::cerr << "Error al enviar el encabezado HTTP" << std::endl;
+            return -1;
+        }
 
-    if (SSL_write(ssl, response[1].c_str(), response[1].size()) < 0)
-    {
-        std::cerr << "Error al enviar el contenido del archivo" << std::endl;
-        return -1;
+        if (SSL_write(ssl, response[1].c_str(), response[1].size()) < 0)
+        {
+            std::cerr << "Error al enviar el contenido del archivo" << std::endl;
+            return -1;
+        }
+    }
+    else{
+        // Enviar el encabezado y el contenido del archivo al cliente
+        if (send(socket, response[0].c_str(), response[0].size(), 0) < 0)
+        {
+            std::cerr << "Error al enviar el encabezado HTTP" << std::endl;
+            return -1;
+        }
+
+        if (send(socket, response[1].c_str(), response[1].size(), 0) < 0)
+        {
+            std::cerr << "Error al enviar el contenido del archivo" << std::endl;
+            return -1;
+        }
     }
 
     return 0;
 }
 
-int HttpServer::__send_response(SSL *ssl, const std::string &response)
+int HttpServer::__send_response(SSL *ssl, int socket, const std::string &response)
 {
-    const char *httpResponse = response.c_str();
-    if (SSL_write(ssl, httpResponse, strlen(httpResponse)) < 0)
+    if (ssl != NULL)
     {
-        std::cerr << "Error al enviar la respuesta HTTPS" << std::endl;
-        return -1;
+        const char *httpResponse = response.c_str();
+        if (SSL_write(ssl, httpResponse, strlen(httpResponse)) < 0)
+        {
+            std::cerr << "Error al enviar la respuesta HTTPS" << std::endl;
+            return -1;
+        }
+        return 0;
     }
-    return 0;
+    else
+    {
+        const char *httpResponse = response.c_str();
+        if (send(socket, httpResponse, strlen(httpResponse), 0) < 0)
+        {
+            std::cerr << "Error al enviar la respuesta HTTP" << std::endl;
+            return -1;
+        }
+        return 0;
+    }
 }
 
 int __wait_socket(int socket, SSL *ssl)
@@ -178,43 +258,56 @@ int __wait_socket(int socket, SSL *ssl)
 
     if (ssl != NULL)
     {
-        // Cerrar la conexión SSL y el socket
-        SSL_shutdown(ssl);
-        SSL_free(ssl);
-        close(socket);
-        // SSL_clear(ssl);
-        socket = -1; // Establecer el socket en un valor no válido
-        return 0;
+        try
+        {
+            // Cerrar la conexión SSL y el socket
+            SSL_shutdown(ssl);
+            SSL_free(ssl);
+            close(socket);
+            // SSL_clear(ssl);
+            socket = -1; // Establecer el socket en un valor no válido
+            return 0;
+        }
+        catch (std::exception &e)
+        {
+            cout << e.what() << "Comunication already closed" << endl;
+        }
     }
 
-    char buffer[BUFFER_SIZE];
-    int recvResult = 0;
-    while ((recvResult = recv(socket, buffer, BUFFER_SIZE, 0)) > 0)
-    {
-        // Esperar a que acabe el envío
-        continue;
-    }
+    // char buffer[BUFFER_SIZE];
+    // int recvResult = 0;
+    // while ((recvResult = recv(socket, buffer, BUFFER_SIZE, 0)) > 0)
+    // {
+    //     // Esperar a que acabe el envío
+    //     continue;
+    // }
 
-    if (recvResult < 0)
-    {
-        std::cerr << "Error al recibir datos del socket" << std::endl;
-        return -1;
-    }
-
+    // if (recvResult < 0)
+    // {
+    //     std::cerr << "Error al recibir datos del socket" << std::endl;
+    //     return -1;
+    // }
     // Manejo del socket
     if (socket >= 0)
     {
-        shutdown(socket, SHUT_WR);
-        close(socket);
-        socket = -1; // Establecer el socket en un valor no válido
+        try
+        {
+            shutdown(socket, SHUT_WR);
+            close(socket);
+            socket = -1; // Establecer el socket en un valor no válido
+        }
+        catch (const std::exception &e)
+        {
+            std::cerr << e.what() << "Comunication already closed" << '\n';
+            return -1;
+        }
     }
-
     return 0;
 }
 
 int HttpServer::__handle_request(int socket, SSL *ssl)
 {
-    std::string request(decodeURIComponent(__recv(ssl)));
+    std::string request(UrlEncoding::decodeURIComponent(__recv(ssl, socket)));
 
     httpMethods http_method(request);
     std::cout << http_method.route << std::endl;
@@ -240,7 +333,8 @@ int HttpServer::__handle_request(int socket, SSL *ssl)
                 else if (!session.isEmpty() && session_index != -1)
                     sessions[session_index] = session;
 
-                __response_create(ssl, response, session);
+                __send_response(ssl, socket, __response_create(response, session));
+
                 __wait_socket(socket, ssl);
                 return 0;
             }
@@ -255,7 +349,9 @@ int HttpServer::__handle_request(int socket, SSL *ssl)
                 setNewSession(session);
             else if (!session.isEmpty() && session_index != -1)
                 sessions[session_index] = session;
-            __response_create(ssl, response, session);
+
+            __send_response(ssl, socket, __response_create(response, session));
+
             __wait_socket(socket, ssl);
             return 0;
         }
@@ -272,14 +368,15 @@ int HttpServer::__handle_request(int socket, SSL *ssl)
                 // Coincidencia encontrada, reemplazar la ruta URL con la ruta local
                 std::string localPath = http_method.route;
                 localPath.replace(pos, route_file.path.length(), route_file.path);
-                __response_file(ssl, localPath.substr(1), route_file.type);
+                __response_file(ssl, socket, localPath.substr(1), route_file.type);
                 __wait_socket(socket, ssl);
                 return 0;
             }
         }
     }
 
-    __response_create(ssl, response, session);
+    __send_response(ssl, socket, __response_create(response, session));
+
     __wait_socket(socket, ssl);
     return 0;
 }
