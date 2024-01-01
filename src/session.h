@@ -30,7 +30,10 @@ public:
         deleted = true;
         values.clear();
     }
-    string &operator[](string key) { return values[key]; }
+    string &operator[](string key) { 
+        if (! isEmpty() && values.find(key) != values.end())
+            return values[key]; 
+    }
 
     Session() { create = false; }
     Session(string id_f) : id(id_f) { create = true; }

@@ -18,7 +18,7 @@ string home(Args &args)
 {
     if (args.request.method == POST)
     {
-        if (args.session["logged"] == "true" && !args.session.isEmpty())
+        if (args.session["logged"] == "true")
         {
             DATABASE["POSTS"].insertRow({{"autor", args.session["user"]}, {"contenido", args.request.content["post"]}});
             vector<post> POSTS;
@@ -44,7 +44,7 @@ string home(Args &args)
     }
     else if (args.request.method == GET)
     {
-        if (args.session["logged"] == "true" && !args.session.isEmpty())
+        if (args.session["logged"] == "true")
         {
             vector<post> POSTS;
             try
@@ -85,28 +85,23 @@ string login(Args &args)
 {
     if (args.request.method == GET)
     {
-        if (args.session["logged"] == "true" && !args.session.isEmpty())
+        if (args.session["logged"] == "true" )
             return Redirect("/");
         return server.Render("templates/login.html");
     }
     else if (args.request.method == POST)
     {
-        vector<vector<string>> USERS;
+        // vector<vector<string>> USERS;
         try
         {
-            for (auto u : DATABASE.getUsersName())
+            vector<string> user = DATABASE.getUser(args.request.content["fname"]);
+
+            if (crypto_lib::calculateSHA512(args.request.content["fpass"]) == user[2] && args.request.content["fname"] == user[1])
             {
-                USERS.push_back(DATABASE.getUser(u));
-            }
-            for (auto &user : USERS)
-            {
-                if (crypto_lib::calculateSHA512(args.request.content["fpass"]) == user[2] && args.request.content["fname"] == user[1])
-                {
-                    args.session.createSession();
-                    args.session["logged"] = "true";
-                    args.session["user"] = user[1];
-                    return Redirect("/");
-                }
+                args.session.createSession();
+                args.session["logged"] = "true";
+                args.session["user"] = user[1];
+                return Redirect("/");
             }
             return server.Render("templates/login.html", {{"error", "true"}});
         }
@@ -120,7 +115,7 @@ string login(Args &args)
 
 string logout(Args &args)
 {
-    if (args.session["logged"] == "true" && !args.session.isEmpty())
+    if (args.session["logged"] == "true" )
         args.session.destroySession();
     return Redirect("/login");
 }
