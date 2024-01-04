@@ -11,7 +11,7 @@ const int MAX_CONNECTIONS = 500;
 string HTTPScontext[] = {"secrets/cert.pem", "secrets/key.pem"};
 
 
-HttpServer server(PORT, HTTPScontext, "server-manu.local", MAX_CONNECTIONS);
+HttpServer server(PORT, HTTPScontext, "ubuntu-manu.local", MAX_CONNECTIONS);
 UsersDB DATABASE("secrets/users.db");
 
 string home(Args &args)
