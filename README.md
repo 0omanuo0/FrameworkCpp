@@ -1,11 +1,49 @@
 # FramworkCpp
  
-The `HttpServer` library is a tool that allows you to create and configure an HTTP server capable of handling SSL requests. Here is a description of the main functions and classes available in this library:
-
-
 
 The `HttpServer` library is a tool that allows you to create and configure an HTTP server capable of handling SSL requests. Here is a description of the main functions and classes available in this library:
 
+
+## Features
+- **HTTPS Support:**
+        The library supports HTTPS with SSL/TLS encryption.
+
+- **Multi-Threading:**
+        It has built-in multi-threading support.
+
+- **Variable Routes:**
+        Allows the definition of routes with variables, enabling dynamic URL handling.
+
+- **Static File Serving:**
+        Supports serving static files such as images, CSS, and JavaScript files.
+
+- **Template Rendering (Jinja):**
+        Offers the ability to render Jinja or HTML templates, facilitating dynamic content generation.
+
+- **Cookie and Session handling:**
+        Includes features for finding and managing cookies in HTTP requests.
+
+- **No Additional Libraries Required:**
+    The library does not require any additional external libraries or dependencies, making it easy to integrate and use in various projects.
+## Installation
+
+Download the source code:
+
+```bash
+git clone https://github.com/0omanuo0/FramworkCpp.git
+```
+#### Requirements:
+
+> The library requires only openssl and sqlite3
+>
+```bash
+apt install libssl-dev libsqlite3-dev
+```
+
+For create a web server a makefile is provided:
+- Build it with for debug: `$ make` or `$ make debug`
+- Build for release: `$ make release`
+- To clean the compiled binaries: `$ make clean`
 
 ## Documentation
 
@@ -150,8 +188,10 @@ int main(int argc, char **argv)
 {
      server.addRoute("/user/<iuserid>", user_account, {GET, POST});
 }
-```
-#UsersDB
+``` 
+
+ 
+# UsersDB
 
 The UsersDB class is an implementation of an SQLite database designed to handle user-related information.
 ### UsersDB constructor
