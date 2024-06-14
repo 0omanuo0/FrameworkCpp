@@ -45,6 +45,14 @@ For create a web server a makefile is provided:
 - Build for release: `$ make release`
 - To clean the compiled binaries: `$ make clean`
 
+Additionally, you can use CMake:
+
+- Create a build directory and navigate into it: $ mkdir build && cd build
+- Generate build files: `$ cmake ..`
+- Build for debug: `$ cmake --build . --config Debug -- -j4`
+- Build for release: `$ cmake --build . --config Release -- -j4`
+- To clean the compiled binaries: `$ cmake --build . --target clean_all`
+
 ## Documentation
 
 [HttpServer class](src/server.h)
