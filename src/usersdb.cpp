@@ -1,31 +1,6 @@
 #include "usersdb.h"
 
-std::string crypto_lib::calculateSHA512(const std::string &input)
-{
-    EVP_MD_CTX *mdctx;
-    const EVP_MD *md;
-    unsigned char md_value[EVP_MAX_MD_SIZE];
-    unsigned int md_len;
 
-    OpenSSL_add_all_digests();
-
-    md = EVP_get_digestbyname("SHA512");
-
-    mdctx = EVP_MD_CTX_new();
-    EVP_DigestInit_ex(mdctx, md, NULL);
-    EVP_DigestUpdate(mdctx, input.c_str(), input.length());
-    EVP_DigestFinal_ex(mdctx, md_value, &md_len);
-    EVP_MD_CTX_free(mdctx);
-
-    std::string result;
-    for (unsigned int i = 0; i < md_len; i++) {
-        char hex[3];
-        snprintf(hex, sizeof(hex), "%02x", md_value[i]);
-        result += hex;
-    }
-
-    return result;
-}
 
 bool UsersDB::check_column(const std::string &column_name)
 {

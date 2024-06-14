@@ -105,15 +105,5 @@ public:
     ~UsersDB();
 };
 
-class crypto_lib
-{
-private:
-    /* data */
-public:
-    static std::string calculateSHA512(const std::string &input);
-    static std::string calculateSHA512(const int &input) { return calculateSHA512(std::to_string(input)); };
-    crypto_lib(/* args */);
-    ~crypto_lib();
-};
 
 #endif
