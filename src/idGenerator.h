@@ -101,24 +101,23 @@ class idGenerator
         static std::string generateUUID() { return uuid::generate_uuid_v4(); }
 
         // jwt token
-        std::string generateJWT(const std::string &data)
-        {
+        std::string generateJWT(const std::string &data) {
             const std::string header = R"({"alg":"HS512","typ":"JWT"})";
             const std::string payload = data;
 
-            // veryfy signature
-            std::string signature = crypto_lib::calculateSHA512(
-                UrlEncoding::encodeURIbase64(header) + "." +
-                UrlEncoding::encodeURIbase64(payload) +
-                private_key);
+            std::string header_encoded = UrlEncoding::encodeURIbase64(header);
+            std::string payload_encoded = UrlEncoding::encodeURIbase64(payload);
 
-            return UrlEncoding::encodeURIbase64(header) + "." +
-                UrlEncoding::encodeURIbase64(payload) + "." +
-                UrlEncoding::encodeURIbase64(signature);
+            std::string signature = crypto_lib::calculateSHA512(
+                header_encoded + "." + payload_encoded + this->private_key
+            );
+
+            std::string signature_encoded = UrlEncoding::encodeURIbase64(signature);
+
+            return header_encoded + "." + payload_encoded + "." + signature_encoded;
         }
 
-        bool verifyJWT(const std::string &token)
-        {
+        bool verifyJWT(const std::string &token) {
             std::string header, payload, signature;
             std::istringstream token_stream(token);
             std::getline(token_stream, header, '.');
@@ -126,12 +125,12 @@ class idGenerator
             std::getline(token_stream, signature, '.');
 
             std::string signature_verify = crypto_lib::calculateSHA512(
-                UrlEncoding::encodeURIbase64(header) + "." +
-                UrlEncoding::encodeURIbase64(payload) +
-                private_key
+                header + "." + payload + this->private_key
             );
 
-            return signature == UrlEncoding::encodeURIbase64(signature_verify);
+            std::string signature_verify_encoded = UrlEncoding::encodeURIbase64(signature_verify);
+
+            return signature == signature_verify_encoded;
         }
 };
 

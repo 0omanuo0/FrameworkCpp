@@ -285,10 +285,25 @@ int HttpServer::__handle_request(int socket, SSL *ssl)
 
     auto session_id = Session::IDfromJWT(http_method.params.cookies[this->default_session_name]);
     int session_index = __find_match_session(session_id);
+    
     Session session = __get_session(session_index);
 
     // Buscar la ruta correspondiente en el std::vector de rutas
     std::string response;
+
+    if(!idGeneratorJWT.verifyJWT(http_method.params.cookies[this->default_session_name])&&session_index!=-1)
+    {
+        const std::string __unauthorized = "<html><head><title>400 Bad Request</title></head><body><h1>400 Bad Request</h1><p>Your browser sent a request that this server could not understand.</p></body></html>";
+        response = "HTTP/1.1 400 Bad Request\r\n";
+        response += "Content-Type: text/html\r\n";
+        response += "Content-Length: " + std::to_string(__unauthorized.length()) + "\r\n";
+        response += "\r\n";
+        response += __unauthorized;
+        __send_response(ssl, socket, response);
+        __wait_socket(socket, ssl);
+        return 0;
+    }
+
     std::vector<std::string> routeVars;
     for (const auto &route : routes)
     {
