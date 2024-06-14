@@ -1,7 +1,7 @@
 #include "server.h"
 #include "templating.h"
 
-HttpServer::HttpServer()
+HttpServer::HttpServer() : idGeneratorJWT(uuid::generate_uuid_v4())
 {
     template_render->server = this;
 }
@@ -23,8 +23,9 @@ struct in_addr hostnameToIp(const char *hostname)
 }
 
 HttpServer::HttpServer(int port_server, char *hostname, int max_connections)
-    : port(port_server), MAX_CONNECTIONS(max_connections)
+    : port(port_server), MAX_CONNECTIONS(max_connections), idGeneratorJWT(uuid::generate_uuid_v4())
 {
+
     host = hostname;
     // Convierte la dirección IP en formato de cadena a representación binaria
     ip_host_struct = hostnameToIp(host);
@@ -32,9 +33,11 @@ HttpServer::HttpServer(int port_server, char *hostname, int max_connections)
     template_render = new Templating();
     template_render->server = this;
 }
-HttpServer::HttpServer(int port_server, const string SSLcontext_server[], char *hostname, int max_connections)
-    : port(port_server), MAX_CONNECTIONS(max_connections)
+HttpServer::HttpServer(int port_server, const string SSLcontext_server[], const char *secret_key, char *hostname, int max_connections )
+    : port(port_server), MAX_CONNECTIONS(max_connections), idGeneratorJWT(string(secret_key))
 {
+    
+
     host = hostname;
     // Convierte la dirección IP en formato de cadena a representación binaria
     ip_host_struct = hostnameToIp(host);
