@@ -2,16 +2,17 @@
 #include "src/server.h"
 #include "users.hpp"
 #include "src/usersdb.h"
+#include "src/idGenerator.h"
+
 
 using namespace std;
 
-const int PORT = 8443;
+const int PORT = 8444;
 const int MAX_CONNECTIONS = 500;
 
 string HTTPScontext[] = {"secrets/cert.pem", "secrets/key.pem"};
 
-
-HttpServer server(PORT, HTTPScontext, "ubuntu-manu.local", MAX_CONNECTIONS);
+HttpServer server(PORT, HTTPScontext, uuid::generate_uuid_v4().c_str(), "ubuntu-manu.local", MAX_CONNECTIONS);
 UsersDB DATABASE("secrets/users.db");
 
 string home(Args &args)
@@ -98,7 +99,6 @@ string login(Args &args)
 
             if (crypto_lib::calculateSHA512(args.request.content["fpass"]) == user[2] && args.request.content["fname"] == user[1])
             {
-                args.session.createSession();
                 args.session["logged"] = "true";
                 args.session["user"] = user[1];
                 return Redirect("/");

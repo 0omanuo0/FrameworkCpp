@@ -11,13 +11,13 @@ void httpProtoResponse::appendCookie(std::string cookie[], const std::string pat
     headers.insert(make_pair("Set-Cookie", cookie_s));
 }
 
-std::string httpProtoResponse::defaultOK_cookie(std::string cookie[], std::string path, int max_age, bool http_only)
+std::string httpProtoResponse::defaultOK(std::string cookie[], std::string path, int max_age, bool http_only)
 {
     appendCookie(cookie, path, max_age, http_only);
     return defaultOK();
 }
 
-std::string httpProtoResponse::defaultRedirect_cookie(std::string url, std::string cookie[], std::string path, int max_age, bool http_only)
+std::string httpProtoResponse::defaultRedirect(std::string url, std::string cookie[], std::string path, int max_age, bool http_only)
 {
     appendCookie(cookie, path, max_age, http_only);
     return defaultRedirect(url);

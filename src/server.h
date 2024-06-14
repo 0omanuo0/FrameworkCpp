@@ -26,8 +26,8 @@
 #define SERVER_VALUES
 
 #define BUFFER_SIZE 1024
-const string SERVER_VERSION = "Soria/0.0.2b (Unix)";
-const string REDIRECT = "VOID*REDIRECT";
+#define SERVER_VERSION = "Soria/0.0.2b (Unix)";
+#define REDIRECT = "VOID*REDIRECT";
 
 #endif
 
@@ -80,6 +80,8 @@ private:
 
     Templating *template_render;
 
+    idGenerator idGeneratorJWT;
+
     int __find_match_session(string id);
     Session __get_session(int index);
 
@@ -109,7 +111,7 @@ public:
     /// @brief Constructor of the server, set the port and the max connections (default 10)
     HttpServer(int port_server, char *host = "0.0.0.0", int max_connections = 10);
     /// @brief Constructor of the server, set the port, the SSL context and the max connections (default 10)
-    HttpServer(int port_server, const string SSLcontext_server[], char *host = "0.0.0.0", int max_connections = 10);
+    HttpServer(int port_server, const string SSLcontext_server[], const char *secret_key, char *host = "0.0.0.0", int max_connections = 10);
 
     /// @brief Function to start the listener
     void startListener();

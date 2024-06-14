@@ -1,6 +1,28 @@
 #include "httpMethods.h"
 #include <iostream>
 #include "url_encoding.h"
+#include <algorithm>
+#include <cctype>
+
+std::string trim(const std::string &str) {
+    // Encuentra la posición del primer carácter no espacio
+    auto start = std::find_if_not(str.begin(), str.end(), [](unsigned char ch) {
+        return std::isspace(ch);
+    });
+
+    // Encuentra la posición del último carácter no espacio
+    auto end = std::find_if_not(str.rbegin(), str.rend(), [](unsigned char ch) {
+        return std::isspace(ch);
+    }).base();
+
+    // Si el string es sólo espacios en blanco, devuelve un string vacío
+    if (start >= end) {
+        return "";
+    }
+
+    // Devuelve el string recortado
+    return std::string(start, end);
+}
 
 
 int httpMethods::loadParams(const std::string &request)
@@ -74,7 +96,8 @@ void httpMethods::__loadParams(const std::string &request)
                 if (equalsPos != std::string::npos) {
                     value2 = token.substr(equalsPos + 1);
                 }
-                params.cookies.insert(std::make_pair(key, value2));
+
+                params.cookies.insert(std::make_pair(trim(key), value2));
             }
             // for (const auto& pair : params.cookies) {
             //     std::cout << pair.first << ": " << pair.second << std::endl;
