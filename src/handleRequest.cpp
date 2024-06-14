@@ -9,8 +9,8 @@ const std::string response_type[] = {"FOLDER", "FILE", "URL"}; // orden de cada 
 std::string __find_cookie(std::vector<Session> &sessions, std::string id)
 {
     for (auto &session : sessions)
-        if (session.id == id)
-            return session.id;
+        if (session.getId() == id)
+            return session.toString();
     return std::string();
 }
 
@@ -51,17 +51,6 @@ bool __route_contains_variables(const std::string &routePath)
     return (routePath.find('<') != std::string::npos && routePath.find('>') != std::string::npos);
 }
 
-// std::string __recv(SSL *ssl)
-// {
-//     char buffer[BUFFER_SIZE] = {0};
-//     memset(buffer, 0, sizeof(buffer));
-//     if (SSL_read(ssl, buffer, sizeof(buffer) - 1) < 0)
-//     {
-//         std::cerr << "Error al leer la petición HTTPS" << std::endl;
-//         return std::string();
-//     }
-//     return std::string(buffer);
-// }
 std::string __recv(SSL *ssl, int socket)
 {
     char buffer[BUFFER_SIZE];
@@ -129,26 +118,22 @@ string HttpServer::__response_create(const std::string &response, Session &sessi
     {
         if (response.substr(0, REDIRECT.length()) == REDIRECT) ////////////////esto no se puede quedar asi
         {
-            std::string cookie[] = {default_session_name, __find_cookie(sessions, session.id)};
+            std::string cookie[] = {this->default_session_name, this->idGeneratorJWT.generateJWT(session.toString())};
+            
             if (cookie[1].empty())
                 response_with_header = response_server.defaultRedirect(response.substr(REDIRECT.length()));
             else
-            {
-                response_with_header = response_server.defaultRedirect_cookie(response.substr(REDIRECT.length()), cookie);
-                session.create = false;
-            }
+                response_with_header = response_server.defaultRedirect(response.substr(REDIRECT.length()), cookie);
         }
         else
         {
             response_server.length = response.length();
-            std::string cookie[] = {default_session_name, __find_cookie(sessions, session.id)};
+            std::string cookie[] = {this->default_session_name, this->idGeneratorJWT.generateJWT(session.toString())};
+
             if (cookie[1].empty())
                 response_with_header += response_server.defaultOK();
             else
-            {
-                response_with_header += response_server.defaultOK_cookie(cookie);
-                session.create = false;
-            }
+                response_with_header += response_server.defaultOK(cookie);
             response_with_header += response;
         }
     }
@@ -274,20 +259,6 @@ int __wait_socket(int socket, SSL *ssl)
         }
     }
 
-    // char buffer[BUFFER_SIZE];
-    // int recvResult = 0;
-    // while ((recvResult = recv(socket, buffer, BUFFER_SIZE, 0)) > 0)
-    // {
-    //     // Esperar a que acabe el envío
-    //     continue;
-    // }
-
-    // if (recvResult < 0)
-    // {
-    //     std::cerr << "Error al recibir datos del socket" << std::endl;
-    //     return -1;
-    // }
-    // Manejo del socket
     if (socket >= 0)
     {
         try
@@ -312,7 +283,8 @@ int HttpServer::__handle_request(int socket, SSL *ssl)
     httpMethods http_method(request);
     std::cout << http_method.route << std::endl;
 
-    int session_index = __find_match_session(http_method.params.cookies["SessionID"]);
+    auto session_id = Session::IDfromJWT(http_method.params.cookies[this->default_session_name]);
+    int session_index = __find_match_session(session_id);
     Session session = __get_session(session_index);
 
     // Buscar la ruta correspondiente en el std::vector de rutas
@@ -327,11 +299,11 @@ int HttpServer::__handle_request(int socket, SSL *ssl)
                 Args arg = Args(routeVars, socket, ssl, http_method, session);
                 response = route.handler(arg);
                 if (session.deleted)
-                    sessions.erase(sessions.begin() + session_index);
-                else if (!session.isEmpty() && session_index == -1)
+                    this->sessions.erase(this->sessions.begin() + session_index);
+                else if (session_index == -1)
                     setNewSession(session);
-                else if (!session.isEmpty() && session_index != -1)
-                    sessions[session_index] = session;
+                else if (session_index != -1)
+                    this->sessions[session_index] = session;
 
                 __send_response(ssl, socket, __response_create(response, session));
 
@@ -344,11 +316,11 @@ int HttpServer::__handle_request(int socket, SSL *ssl)
             Args arg = Args(routeVars, socket, ssl, http_method, session);
             response = route.handler(arg);
             if (session.deleted)
-                sessions.erase(sessions.begin() + session_index);
+                this->sessions.erase(this->sessions.begin() + session_index);
             else if (!session.isEmpty() && session_index == -1)
                 setNewSession(session);
             else if (!session.isEmpty() && session_index != -1)
-                sessions[session_index] = session;
+                this->sessions[session_index] = session;
 
             __send_response(ssl, socket, __response_create(response, session));
 

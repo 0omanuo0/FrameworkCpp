@@ -1,6 +1,16 @@
 #include "server.h"
 #include "httpProto.h"
 
+#ifndef SERVER_VALUES
+    #define SERVER_VALUES
+
+    #define BUFFER_SIZE 1024
+    #define SERVER_VERSION "Soria/0.0.2b (Unix)" // Corrected
+    const string REDIRECT = "VOID*REDIRECT"; // Corrected
+
+#endif
+
+
 // std::string Redirect(int socket, std::string url, std::vector<std::string> cookie){///////////areglas cookie
 //     httpProtoResponse response;
 
@@ -12,7 +22,7 @@
 //     return REDIRECT;
 // }
 std::string Redirect(std::string url){///////////areglas cookie
-    return REDIRECT + url;
+    return std::string(REDIRECT) + url;
 }
 
 bool starts_with_prefix(const std::string& url){
@@ -29,7 +39,7 @@ bool starts_with_prefix(const std::string& url){
 int HttpServer::__find_match_session(std::string id)
 {
     for (int i = 0; i < (int)sessions.size(); i++)
-        if (sessions[i].id == id)
+        if (sessions[i].getId() == id)
             return i; // Devuelve la posición en el vector
     
     return -1; // Retorna -1 si no se encuentra la sesión
@@ -38,8 +48,11 @@ int HttpServer::__find_match_session(std::string id)
 Session HttpServer::__get_session(int index){
     if (index >= 0 && index < (int)sessions.size())
         return sessions[index]; // Devuelve la sesión correspondiente al índice
-    else
-        return Session(); // Devuelve una sesión vacía si el número está fuera de rango
+    else{
+        auto id = string(idGenerator::generateUUID());
+        return Session(id); // Devuelve una sesión vacía si el número está fuera de rango
+    }
+        
 }
 
 Session HttpServer::setNewSession(Session session){
