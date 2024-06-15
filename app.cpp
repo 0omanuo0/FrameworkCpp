@@ -15,13 +15,13 @@ string HTTPScontext[] = {"secrets/cert.pem", "secrets/key.pem"};
 HttpServer server(PORT, HTTPScontext, uuid::generate_uuid_v4().c_str(), "ubuntu-manu.local", MAX_CONNECTIONS);
 UsersDB DATABASE("secrets/users.db");
 
-string home(Args &args)
+string home(Request &req)
 {
-    if (args.request.method == POST)
+    if (req.method == POST)
     {
-        if (args.session["logged"] == "true")
+        if (req.session["logged"] == "true")
         {
-            DATABASE["POSTS"].insertRow({{"autor", args.session["user"]}, {"contenido", args.request.content["post"]}});
+            DATABASE["POSTS"].insertRow({{"autor", req.session["user"]}, {"contenido", req.content["post"]}});
             vector<post> POSTS;
             try
             {
@@ -37,15 +37,15 @@ string home(Args &args)
                 std::cerr << e.what() << '\n';
             }
 
-            return server.Render("templates/home_logged.html", {{"user", args.session["user"]}, {"posts", posts_to_string(POSTS)}});
+            return server.Render("templates/home_logged.html", {{"user", req.session["user"]}, {"posts", posts_to_string(POSTS)}});
         }
         else
             return server.Render("templates/home.html");
         return Redirect("/");
     }
-    else if (args.request.method == GET)
+    else if (req.method == GET)
     {
-        if (args.session["logged"] == "true")
+        if (req.session["logged"] == "true")
         {
             vector<post> POSTS;
             try
@@ -62,45 +62,45 @@ string home(Args &args)
                 std::cerr << e.what() << '\n';
             }
 
-            return server.Render("templates/home_logged.html", {{"user", args.session["user"]}, {"posts", posts_to_string(POSTS)}});
+            return server.Render("templates/home_logged.html", {{"user", req.session["user"]}, {"posts", posts_to_string(POSTS)}});
         }
         else
             return server.Render("templates/home.html");
     }
 }
 
-string user_account(Args &args)
+string user_account(Request &req)
 {
-    if (args.session["logged"] == "true" && args.vars[0] == args.session["user"])
-        return server.Render("templates/user.html", {{"user", args.vars[0]}, {"pass", DATABASE.getUser(args.vars[0])[2]}});
+    if (req.session["logged"] == "true" && req.parameters["iuserid"] == req.session["user"])
+        return server.Render("templates/user.html", {{"user", req.parameters["iuserid"]}, {"pass", DATABASE.getUser(req.parameters["iuserid"])[2]}});
     else
         return Redirect("/login");
 }
 
-string images(Args &args)
+string images(Request &req)
 {
-    return server.Render("templates/image.html", {{"id", args.vars[0]}});
+    return server.Render("templates/image.html", {{"id", req.parameters["iuserid"]}});
 }
 
-string login(Args &args)
+string login(Request &req)
 {
-    if (args.request.method == GET)
+    if (req.method == GET)
     {
-        if (args.session["logged"] == "true" )
+        if (req.session["logged"] == "true" )
             return Redirect("/");
         return server.Render("templates/login.html");
     }
-    else if (args.request.method == POST)
+    else if (req.method == POST)
     {
         // vector<vector<string>> USERS;
         try
         {
-            vector<string> user = DATABASE.getUser(args.request.content["fname"]);
+            vector<string> user = DATABASE.getUser(req.content["fname"]);
 
-            if (crypto_lib::calculateSHA512(args.request.content["fpass"]) == user[2] && args.request.content["fname"] == user[1])
+            if (crypto_lib::calculateSHA512(req.content["fpass"]) == user[2] && req.content["fname"] == user[1])
             {
-                args.session["logged"] = "true";
-                args.session["user"] = user[1];
+                req.session["logged"] = "true";
+                req.session["user"] = user[1];
                 return Redirect("/");
             }
             return server.Render("templates/login.html", {{"error", "true"}});
@@ -113,10 +113,10 @@ string login(Args &args)
     return "error";
 }
 
-string logout(Args &args)
+string logout(Request &req)
 {
-    if (args.session["logged"] == "true" )
-        args.session.destroySession();
+    if (req.session["logged"] == "true" )
+        req.session.destroySession();
     return Redirect("/login");
 }
 
