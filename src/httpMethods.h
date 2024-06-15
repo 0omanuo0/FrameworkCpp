@@ -9,42 +9,55 @@
 
 const std::string GET = "GET";
 const std::string POST = "POST";
+const std::string PUT = "PUT";
+const std::string PATCH = "PATCH";
 const std::string DELETE = "DELETE";
+const std::string OPTIONS = "OPTIONS";
+const std::string HEAD = "HEAD";
+const std::string CONNECT = "CONNECT";
+const std::string TRACE = "TRACE";
 
-class httpMethods
+struct HttpRequest
+{
+    std::string method;
+    std::string route;
+    std::string query;
+    std::map<std::string, std::string> content;
+};
+
+class httpHeaders
 {
 private:
     void __loadParams(const std::string &request);
-public:
+
     std::string method;
     std::string route;
     std::string query;
     std::map<std::string, std::string> content;
 
-    struct httpParams
-    {
-        std::string host;
-        std::string user_agent;
-        std::vector<std::string> accept;
-        std::vector<std::string> accept_language;
-        std::vector<std::string> accept_encoding;
-        std::map<std::string, std::string> cookies;
-        std::string DNT;
-        std::string connection;
-        std::string upgrade_insecure_requests;
-        std::string content_type;
-        std::string origin;
-        std::string referer;
+public:
+    std::string host;
+    std::string user_agent;
+    std::vector<std::string> accept;
+    std::vector<std::string> accept_language;
+    std::vector<std::string> accept_encoding;
+    std::map<std::string, std::string> cookies;
+    std::string DNT;
+    std::string connection;
+    std::string upgrade_insecure_requests;
+    std::string content_type;
+    std::string origin;
+    std::string referer;
 
+    HttpRequest getRequest() { return {method, route, query, content}; }
 
-    };
+    std::string getMethod() { return method; }
+    std::string getRoute() { return route; }
+    std::string getQuery() { return query; }
 
-    httpParams params;
+    httpHeaders() {}
 
-    httpMethods(){}
-
-    httpMethods(std::string req){loadParams(req);};
-    
+    httpHeaders(std::string req) { loadParams(req); };
 
     int loadParams(const std::string &request);
 };

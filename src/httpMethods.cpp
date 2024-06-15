@@ -3,57 +3,58 @@
 #include "url_encoding.h"
 #include <algorithm>
 #include <cctype>
+#include <regex>
 
-std::string trim(const std::string &str) {
-    // Encuentra la posición del primer carácter no espacio
-    auto start = std::find_if_not(str.begin(), str.end(), [](unsigned char ch) {
-        return std::isspace(ch);
-    });
+constexpr unsigned int hash(const char *str, int h = 0)
+{
+    return !str[h] ? 5381 : (hash(str, h + 1) * 33) ^ str[h];
+}
 
-    // Encuentra la posición del último carácter no espacio
-    auto end = std::find_if_not(str.rbegin(), str.rend(), [](unsigned char ch) {
-        return std::isspace(ch);
-    }).base();
-
-    // Si el string es sólo espacios en blanco, devuelve un string vacío
-    if (start >= end) {
+std::string trim(const std::string &str)
+{
+    auto start = std::find_if_not(str.begin(), str.end(), [](unsigned char ch)
+                                  { return std::isspace(ch); });
+    auto end = std::find_if_not(str.rbegin(), str.rend(), [](unsigned char ch)
+                                { return std::isspace(ch); })
+                   .base();
+    if (start >= end)
+    {
         return "";
     }
-
-    // Devuelve el string recortado
     return std::string(start, end);
 }
 
-
-int httpMethods::loadParams(const std::string &request)
+int httpHeaders::loadParams(const std::string &request)
 {
+    std::smatch match;
+    const std::regex requestLineRegex(R"(^(\w+)\s+(\S+)\s+HTTP/\d\.\d(\r\n)*)");
+    const std::regex queryRegex(R"(^([^\?]+)(\?(.+))?$)");
 
-    size_t start = request.find(" ") + 1;
-    size_t end = request.find(" ", start);
-    route = request.substr(start, end - start);
-
-    std::size_t pos = route.find('?');
-
-
-    if (pos != std::string::npos){
-        route = route.substr(0, pos);
-        if (pos >= route.length())
-            query = route.substr(pos+1);    
-    }
-    if (!route.empty() && route.back() == '/')// Eliminar el último carácter
-            route.pop_back();
-    if(route.empty())
-        route = "/";
-        
-    if (method.empty())
+    if (std::regex_search(request, match, requestLineRegex))
     {
-        method = request.substr(0, request.find(" "));
+        this->method = match[1];
+        this->route = match[2];
+        std::cout << "Method: " << this->method << std::endl;
+        std::cout << "Route: " << this->route << std::endl;
     }
+
+    if (std::regex_match(this->route, match, queryRegex)) {
+        this->route = match[1];
+
+        if (match[3].matched) this->query = match[3];
+        else this->query = "";
+    }
+
+    if (!this->route.empty() && this->route.back() == '/') // Eliminar el último carácter
+        this->route.pop_back();
+    if (this->route.empty())
+        this->route = "/";
+
     __loadParams(request);
     return 0;
 }
 
-void httpMethods::__loadParams(const std::string &request)
+void httpHeaders::__loadParams(const std::string &request)
 {
     // Extraer la ruta de la solicitud HTTP
     size_t start = request.find(" ") + 1;
@@ -63,88 +64,112 @@ void httpMethods::__loadParams(const std::string &request)
     end = request.find("\r\n", start);
 
     std::string content_length;
-    
-    while (end != std::string::npos) {
+
+    while (end != std::string::npos)
+    {
 
         size_t paramStart = start;
         size_t paramEnd = request.find(" ", paramStart);
         std::string param = request.substr(paramStart, paramEnd - paramStart);
-    
+
         size_t valueStart = paramEnd + 1;
         size_t valueEnd = end;
         std::string value = request.substr(valueStart, valueEnd - valueStart);
 
-        if (param == "Host:")
-            params.host = value;
-        else if (param == "User-Agent:")
-            params.user_agent = value;
-        else if (param == "Accept:")
+        switch (hash(param.c_str()))
+        {
+        case hash("Host:"):
+            this->host = value;
+            break;
+        case hash("User-Agent:"):
+            this->user_agent = value;
+            break;
+        case hash("Accept:"):
         {
             std::istringstream iss(value);
             std::string token;
             while (std::getline(iss, token, ','))
-                params.accept.push_back(token);
+            {
+                this->accept.push_back(token);
+            }
+            break;
         }
-        else if (param == "Cookie:")
+        case hash("Cookie:"):
         {
             std::istringstream iss(value);
             std::string token;
-            while (std::getline(iss, token, ';')) {
+            while (std::getline(iss, token, ';'))
+            {
                 std::string key = token.substr(0, token.find("="));
                 std::string value2;
                 size_t equalsPos = token.find("=");
-                if (equalsPos != std::string::npos) {
+                if (equalsPos != std::string::npos)
+                {
                     value2 = token.substr(equalsPos + 1);
                 }
-
-                params.cookies.insert(std::make_pair(trim(key), value2));
+                this->cookies.insert(std::make_pair(trim(key), value2));
             }
-            // for (const auto& pair : params.cookies) {
-            //     std::cout << pair.first << ": " << pair.second << std::endl;
-            // }
+            break;
         }
-        else if (param == "Accept-Language:")
+        case hash("Accept-Language:"):
         {
             std::istringstream iss(value);
             std::string token;
             while (std::getline(iss, token, ','))
-                params.accept_language.push_back(token);
+            {
+                this->accept_language.push_back(token);
+            }
+            break;
         }
-        else if (param == "Accept-Encoding:")
+        case hash("Accept-Encoding:"):
         {
             std::istringstream iss(value);
             std::string token;
             while (std::getline(iss, token, ','))
-                params.accept_encoding.push_back(token);
+            {
+                this->accept_encoding.push_back(token);
+            }
+            break;
         }
-        else if (param == "DNT:")
-            params.DNT = value;
-        else if (param == "Connection:")
-            params.connection = value;
-        else if (param == "Upgrade-Insecure-Requests:")
-            params.upgrade_insecure_requests = value;
-        else if (param == "Content-Type:")
-            params.content_type = value;
-        else if (param == "Origin:")
-            params.origin = value;
-        else if (param == "Referer:")
-            params.referer = value;
-        else if (param == "Content-Length:")
+        case hash("DNT:"):
+            this->DNT = value;
+            break;
+        case hash("Connection:"):
+            this->connection = value;
+            break;
+        case hash("Upgrade-Insecure-Requests:"):
+            this->upgrade_insecure_requests = value;
+            break;
+        case hash("Content-Type:"):
+            this->content_type = value;
+            break;
+        case hash("Origin:"):
+            this->origin = value;
+            break;
+        case hash("Referer:"):
+            this->referer = value;
+            break;
+        case hash("Content-Length:"):
             content_length = value;
+            break;
+        default:
+            break;
+        }
 
         start = end + 2;
         end = request.find("\r\n", start);
     }
 
-    if(!content_length.empty()){
-        std::regex pattern("^\r\n*|([^=&]+)=([^&]*)");
+    if (!content_length.empty())
+    {
+        const std::regex pattern("^\r\n*|([^=&]+)=([^&]*)");
         std::smatch matches;
 
-        //std::string input = request.substr(request.length() - std::stoi(content_length), std::stoi(content_length));
         std::string input = request.substr(request.find_last_of("\r\n") + 1, std::stoi(content_length));
 
-        while (std::regex_search(input, matches, pattern)) {
-            content[matches[1].str()] = matches[2].str();
+        while (std::regex_search(input, matches, pattern))
+        {
+            this->content[matches[1].str()] = matches[2].str();
             input = matches.suffix();
         }
     }
