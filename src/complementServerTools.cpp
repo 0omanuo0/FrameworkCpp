@@ -1,5 +1,4 @@
 #include "server.h"
-#include "httpProto.h"
 
 #ifndef SERVER_VALUES
     #define SERVER_VALUES
