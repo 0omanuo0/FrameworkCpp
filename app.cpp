@@ -8,14 +8,14 @@
 using namespace std;
 
 const int PORT = 8444;
-const int MAX_CONNECTIONS = 500;
+
 
 string HTTPScontext[] = {"secrets/cert.pem", "secrets/key.pem"};
 
-HttpServer server(PORT, HTTPScontext, uuid::generate_uuid_v4().c_str(), "ubuntu-manu.local", MAX_CONNECTIONS);
+HttpServer server(PORT, HTTPScontext, "ubuntu-manu.local");
 UsersDB DATABASE("secrets/users.db");
 
-string home(Request &req)
+types::HttpResponse home(Request &req)
 {
     if (req.method == POST)
     {
@@ -25,7 +25,7 @@ string home(Request &req)
             vector<post> POSTS;
             try
             {
-                for (size_t i = 1; i <= DATABASE["POSTS"].countRows(); i++)
+                for (int i = 1; i <= DATABASE["POSTS"].countRows(); i++)
                 {
                     unordered_map post1 = DATABASE["POSTS"].getByID(to_string(i));
                     post p = {{post1["autor"]}, post1["contenido"]};
@@ -41,7 +41,7 @@ string home(Request &req)
         }
         else
             return server.Render("templates/home.html");
-        return Redirect("/");
+        return server.Redirect("/");
     }
     else if (req.method == GET)
     {
@@ -69,25 +69,25 @@ string home(Request &req)
     }
 }
 
-string user_account(Request &req)
+types::HttpResponse user_account(Request &req)
 {
     if (req.session["logged"] == "true" && req.parameters["iuserid"] == req.session["user"])
         return server.Render("templates/user.html", {{"user", req.parameters["iuserid"]}, {"pass", DATABASE.getUser(req.parameters["iuserid"])[2]}});
     else
-        return Redirect("/login");
+        return server.Redirect("/login");
 }
 
-string images(Request &req)
+types::HttpResponse images(Request &req)
 {
     return server.Render("templates/image.html", {{"id", req.parameters["iuserid"]}});
 }
 
-string login(Request &req)
+types::HttpResponse login(Request &req)
 {
     if (req.method == GET)
     {
         if (req.session["logged"] == "true" )
-            return Redirect("/");
+            return server.Redirect("/");
         return server.Render("templates/login.html");
     }
     else if (req.method == POST)
@@ -101,23 +101,24 @@ string login(Request &req)
             {
                 req.session["logged"] = "true";
                 req.session["user"] = user[1];
-                return Redirect("/");
+                return server.Redirect("/");
             }
             return server.Render("templates/login.html", {{"error", "true"}});
         }
         catch (const std::exception &e)
         {
             std::cerr << e.what() << '\n';
+            server.InternalServerError();
         }
     }
-    return "error";
+    return server.NotFound();
 }
 
-string logout(Request &req)
+types::HttpResponse logout(Request &req)
 {
     if (req.session["logged"] == "true" )
         req.session.destroySession();
-    return Redirect("/login");
+    return server.Redirect("/login");
 }
 
 int main(int argc, char **argv)
@@ -139,6 +140,9 @@ int main(int argc, char **argv)
         std::cerr << e.what() << '\n';
     }
 
+    server["secret_key"] = uuid::generate_uuid_v4();
+    server["max_connections"] = 10;
+
     // Ruta sin variables
     server.addRoute("/home", home, {GET, POST});
     server.addRoute("/", home, {GET, POST});
@@ -148,6 +152,5 @@ int main(int argc, char **argv)
     server.addRoute("/logout", logout, {GET});
     server.addRoute("/image/<id>", images, {GET});
 
-    server.setup();
     server.startListener();
 }
