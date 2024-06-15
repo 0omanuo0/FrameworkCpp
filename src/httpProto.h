@@ -8,6 +8,7 @@ const std::string USERAGENT = "POST";
 
 const std::string OK200 = "HTTP/1.1 200 OK";
 const std::string NOTFOUND404 = "HTTP/1.1 404 Not Found";
+const std::string UNAUTHORIZED401 = "HTTP/1.1 401 Unauthorized";
 const std::string REDIRECT302 = "HTTP/1.1 302 Found";
 const std::string REDIRECT303 = "HTTP/1.1 303 See Other";
 
@@ -28,7 +29,7 @@ public:
     int length = 0;
     std::string server;
 
-    httpProtoResponse(/* args */){};
+    httpProtoResponse(){};
     httpProtoResponse(std::map<std::string, std::string> headers_f, std::string server_f = "Soria/0.0.2b (Unix)")
         : server(server_f), headers(headers_f){};
 
@@ -40,6 +41,7 @@ public:
 
     std::string defaultRedirect(std::string url);
     std::string defaultRedirect(std::string url, std::string cookie[2], std::string path = "/", int max_age = 31536000, bool http_only = true);
+    std::string defaultUnauthorized();
     std::string defaultOK();
     std::string defaultNotFound();
     std::string defaultOK(std::string cookie[2], std::string path = "/", int max_age = 31536000, bool http_only = true);

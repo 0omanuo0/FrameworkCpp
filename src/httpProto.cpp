@@ -29,6 +29,21 @@ std::string httpProtoResponse::defaultRedirect(std::string url)
     return createResponseString(REDIRECT303);
 }
 
+std::string httpProtoResponse::defaultUnauthorized()
+{
+    // AT LEAST NEEDS THIS:
+    // response = "HTTP/1.1 400 Bad Request\r\n";
+    // response += "Content-Type: text/html\r\n";
+    // response += "Content-Length: " + std::to_string(__unauthorized.length()) + "\r\n";
+    // response += "\r\n";
+    headers.insert(std::make_pair("Content-Type", "text/html"));
+    
+    return createResponseString(UNAUTHORIZED401);
+
+
+
+}
+
 std::string httpProtoResponse::defaultOK()
 {
     headers.insert(std::make_pair("Content-Type", "text/html"));
@@ -45,7 +60,6 @@ std::string httpProtoResponse::createResponseString(std::string type, std::pair<
     headers.insert(content);
     return createResponseString(type);
 }
-
 
 // funcion principal que crea la respouesta
 std::string httpProtoResponse::createResponseString(std::string type)
