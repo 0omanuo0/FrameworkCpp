@@ -4,6 +4,8 @@
 #include "src/usersdb.h"
 #include "src/idGenerator.h"
 
+#include "src/json.hpp"
+
 
 using namespace std;
 
@@ -14,6 +16,17 @@ string HTTPScontext[] = {"secrets/cert.pem", "secrets/key.pem"};
 
 HttpServer server(PORT, HTTPScontext, "ubuntu-manu.local");
 UsersDB DATABASE("secrets/users.db");
+
+
+types::HttpResponse apiHome(Request &req)
+{
+    json j;
+    j["message"] = "Hello World";
+    j["id"] = req.parameters["id"];
+    string res = j.dump(4);
+
+    return Response(res, 200, {{"Content-Type", "application/json"}});
+}
 
 types::HttpResponse home(Request &req)
 {
@@ -142,6 +155,8 @@ int main(int argc, char **argv)
 
     server["secret_key"] = uuid::generate_uuid_v4();
     server["max_connections"] = 10;
+
+    server.addRoute("/api/<id>", apiHome, {GET, POST});
 
     // Ruta sin variables
     server.addRoute("/home", home, {GET, POST});
