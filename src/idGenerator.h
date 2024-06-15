@@ -86,8 +86,9 @@ namespace crypto_lib
 class idGenerator
 {
     private:
-        const std::string private_key;
+        std::string private_key;
     public:
+        void setPrivateKey(const std::string &private_key) { this->private_key = private_key; }
         idGenerator(const std::string &private_key) : private_key(private_key) {}
         static int generateID() { return atoi(generateIDstr().c_str()); }
         static std::string generateIDstr()
