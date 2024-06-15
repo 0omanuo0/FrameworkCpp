@@ -192,9 +192,9 @@ int HttpServer::setup()
     return 0;
 }
 
-void HttpServer::addRoute(const string &path, function<string(Args &)> handler, vector<string> methods)
+void HttpServer::addRoute(const string &path, function<string(Request &)> handler, vector<string> methods)
 {
-    routes.push_back({path, methods, [handler](Args &args)
+    this->routes.push_back({path, methods, [handler](Request &args)
                       {
                           return handler(args); // Call the original handler with the query and method
                       }});
@@ -206,11 +206,11 @@ void HttpServer::addRouteFile(const string &endpoint, const string &extension)
             return;
     try
     {
-        routesFile.push_back({endpoint, content_type.find(extension)->second});
+        this->routesFile.push_back({endpoint, content_type.find(extension)->second});
     }
     catch(const std::exception& e)
     {
-        routesFile.push_back({endpoint, "application/force-download"});
+        this->routesFile.push_back({endpoint, "application/force-download"});
     }   
 }
 void HttpServer::urlfor(const string &endpoint)

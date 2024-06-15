@@ -19,7 +19,7 @@
 #include "session.h"
 #include "httpProto.h"
 #include "idGenerator.h"
-#include "args.h"
+#include "request.h"
 #include "templating.h"
 
 #ifndef SERVER_VALUES
@@ -50,7 +50,7 @@ struct Route
 {
     string path;
     vector<string> methods;
-    function<string(Args &)> handler;
+    function<string(Request &)> handler;
 };
 struct RouteFile
 {
@@ -76,7 +76,9 @@ private:
     vector<Route> routes;
     vector<RouteFile> routesFile;
     vector<Session> sessions;
+    
     string __not_found = "<h1>NOT FOUND</h1>";
+    string __unauthorized = "<html><head><title>400 Bad Request</title></head><body><h1>400 Bad Request</h1><p>Your browser sent a request that this server could not understand.</p></body></html>";
 
     Templating *template_render;
 
@@ -129,7 +131,7 @@ public:
     /// @param handler The function to handle the request
     /// @param methods The methods allowed to access the endpoint
     void addRoute(const string &path,
-                  function<string(Args &)> handler,
+                  function<string(Request &)> handler,
                   vector<string> methods);
 
     /// @brief Function add a file to the server
