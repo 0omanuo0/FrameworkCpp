@@ -21,8 +21,20 @@
     
 //     return REDIRECT;
 // }
-std::string Redirect(std::string url){///////////areglas cookie
-    return std::string(REDIRECT) + url;
+Response HttpServer::Redirect(std::string url){
+    return Response("Redirecting to " + url, 302, {{"Location", url}});;
+}
+
+Response HttpServer::NotFound(){
+    return Response(this->__not_found, 404);
+}
+
+Response HttpServer::Unauthorized(){
+    return Response(this->__unauthorized, 401);
+}
+
+Response HttpServer::InternalServerError(){
+    return Response(this->__internal_server_error, 500);
 }
 
 bool starts_with_prefix(const std::string& url){

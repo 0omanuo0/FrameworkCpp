@@ -14,13 +14,14 @@
 #include <fstream>
 #include <netdb.h>
 #include <filesystem>
+#include <variant>
 
 #include "httpMethods.h"
 #include "session.h"
-#include "httpProto.h"
 #include "idGenerator.h"
 #include "request.h"
 #include "templating.h"
+#include "response.h"
 
 #ifndef SERVER_VALUES
 #define SERVER_VALUES
@@ -33,39 +34,47 @@
 
 #ifndef FILE_TYPE
 #define FILE_TYPE
-const map<string, string> content_type = {
+const std::map<std::string, std::string> content_type = {
     {"js", "application/javascript"},
     {"css", "text/css"},
     {"html", "text/html"},
     {"txt", "text/plain"}};
 #endif
 
-#pragma region structs
-struct SSLcontext
-{
-    string certificate;
-    string private_key;
-};
-struct Route
-{
-    string path;
-    vector<string> methods;
-    function<string(Request &)> handler;
-};
-struct RouteFile
-{
-    string path;
-    string type;
-};
-#pragma endregion
+namespace types{
+    typedef variant<std::string, Response> HttpResponse;
+    typedef function<HttpResponse(Request&)> FunctionHandler;
+
+    struct SSLcontext
+    {
+        std::string certificate;
+        std::string private_key;
+    };
+    struct Route
+    {
+        std::string path;
+        std::vector<std::string> methods;
+        FunctionHandler handler;
+    };
+    struct RouteFile
+    {
+        std::string path;
+        std::string type;
+    };
+}
 
 class Templating;
-using namespace std;
+
+
 class HttpServer
 {
 private:
+    int port = 8080;
+    int serverSocket;
+    char *host;
+
     bool HTTPS = false;
-    SSLcontext context;
+    types::SSLcontext context;
     SSL_CTX *ssl_ctx;
     struct in_addr ip_host_struct;
     //void __handle_client(int clientSocket);
@@ -73,82 +82,81 @@ private:
     struct sockaddr_in serverAddress, clientAddress;
     int addrlen = sizeof(serverAddress);
 
-    vector<Route> routes;
-    vector<RouteFile> routesFile;
-    vector<Session> sessions;
+    std::vector<types::Route> routes;
+    std::vector<types::RouteFile> routesFile;
+    std::vector<Session> sessions;
     
-    string __not_found = "<h1>NOT FOUND</h1>";
-    string __unauthorized = "<html><head><title>400 Bad Request</title></head><body><h1>400 Bad Request</h1><p>Your browser sent a request that this server could not understand.</p></body></html>";
+    std::string __not_found = "<h1>NOT FOUND</h1>";
+    std::string __unauthorized = "<html><head><title>400 Bad Request</title></head><body><h1>400 Bad Request</h1><p>Your browser sent a request that this server could not understand.</p></body></html>";
+    std::string __internal_server_error = "<html><head><title>500 Internal Server Error</title></head><body><h1>500 Internal Server Error</h1><p>The server encountered an internal error or misconfiguration and was unable to complete your request.</p></body></html>";
 
     Templating *template_render;
+    int MAX_CONNECTIONS = 10;
+    std::string default_session_name = "SessionID";
 
-    idGenerator idGeneratorJWT;
+    idGenerator idGeneratorJWT = idGenerator("");
 
-    int __find_match_session(string id);
+    std::unordered_map<std::string, std::variant<std::string, int>> data_;
+
+    int __find_match_session(std::string id);
     Session __get_session(int index);
 
     int __handle_request(int socket, SSL *ssl);
 
-    string __response_create(const string &response, Session &session);
-    int __response_file(SSL *ssl, int socket, const string &path, const string &type);
-    //int __response_folder(SSL *ssl, const string &response, Session &session);
+    std::string __response_create(const std::string &response, Session &session);
+    int __response_file(SSL *ssl, int socket, const std::string &path, const std::string &type);
+    //int __response_folder(SSL *ssl, const std::string &response, Session &session);
 
-    int __send_response(SSL *ssl, int socket, const string &response);
-    int __send_response(SSL *ssl, int socket, const vector<string> &response);
+    int __send_response(SSL *ssl, int socket, const std::string &response);
+    int __send_response(SSL *ssl, int socket, const std::vector<std::string> &response);
     void __startListenerSSL();
     void __startListener();
+    int __setup();
 
-    void addRouteFile(const string &endpoint, const string &extension);
+    void addRouteFile(const std::string &endpoint, const std::string &extension);
     Session setNewSession(Session session);
 
 public:
-    int port = 8080;
-    int serverSocket;
-    char *host;
+    /// @brief Function to set the configuration of the server
+    std::variant<std::string, int>& operator[](const std::string& key);
 
-    int MAX_CONNECTIONS = 10;
-    string default_session_name = "SessionID";
+    /// @brief Function to get the port of the server
+    int getPort(){return this->port;}
+    /// @brief Function to get the host of the server
+    std::string getHost(){return this->host;}
+
     /// @brief Constructor of the server
     HttpServer();
     /// @brief Constructor of the server, set the port and the max connections (default 10)
-    HttpServer(int port_server, char *host = "0.0.0.0", int max_connections = 10);
-    /// @brief Constructor of the server, set the port, the SSL context and the max connections (default 10)
-    HttpServer(int port_server, const string SSLcontext_server[], const char *secret_key, char *host = "0.0.0.0", int max_connections = 10);
+    HttpServer(int port_server, char *host = "0.0.0.0");
+    /// @brief Constructor of the server, set the port, the SSL context, the secret key, the host and the max connections (default 10)
+    HttpServer(int port_server, const std::string SSLcontext_server[], char *host = "0.0.0.0");
 
     /// @brief Function to start the listener
     void startListener();
 
-    /// @brief Function to setup the server
-    /// @return If dont return 0 the server is not setup correctly
-    int setup();
-
-    /// @brief Function to set the content of the 404 page
-    /// @param content The content of the 404 page
-    void setNotFound(string content) { __not_found = content; };
-
     /// @brief Function create a new route to the server
     /// @param path Route to the endpoint in browser
-    /// @param handler The function to handle the request
+    /// @param handler The function to handle the request, can return a std::string or a Response
     /// @param methods The methods allowed to access the endpoint
-    void addRoute(const string &path,
-                  function<string(Request &)> handler,
-                  vector<string> methods);
+    void addRoute(const std::string &path, types::FunctionHandler handler, std::vector<std::string> methods);
 
     /// @brief Function add a file to the server
     /// @param endpoint Route to the file, also the route to the file in the browse
-    void urlfor(const string &endpoint);
+    void urlfor(const std::string &endpoint);
 
     /// @brief Function to render a jinja or html file
     /// @param route Route to the file
     /// @param data Content to pass to the file
-    /// @return The rendered file as string to send to the client
-    string Render(const string &route, map<string, string> data = map<string, string>());
+    /// @return The rendered file as std::string to send to the client
+    std::string Render(const std::string &route, std::map<std::string, std::string> data = std::map<std::string, std::string>());
+
+    Response Redirect(std::string url);
+    Response NotFound();
+    Response Unauthorized();
+    Response InternalServerError();
 };
-/// @brief Function to redirect to a url
-/// @param url The endpoint to redirect to
-/// @return The rendered file as string to send to the client
-string Redirect(string url);
 /// @brief Function to find the cookie
-string findCookie(HttpServer &server);
+std::string findCookie(HttpServer &server);
 
 #endif // SERVER_H

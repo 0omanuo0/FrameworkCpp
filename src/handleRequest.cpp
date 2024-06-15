@@ -2,12 +2,6 @@
 #include "url_encoding.h"
 #include <unordered_map>
 
-#ifndef RESPONSE_TYPE
-#define RESPONSE_TYPE
-const std::string response_type[] = {"FOLDER", "FILE", "URL"}; // orden de cada tipo de respuesta
-#endif
-
-
 bool __match_path_with_route(const std::string &path, const std::string &routePath, std::unordered_map<std::string, std::string> &url_params)
 {
     const std::regex routeRegex("^" + std::regex_replace(routePath, std::regex("<([^>]+)>"), "([^/]+)") + "$");
@@ -91,52 +85,17 @@ std::string __recv(SSL *ssl, int socket)
     return data;
 }
 
-string HttpServer::__response_create(const std::string &response, Session &session)
-{
-    // respuestas https
-    std::string response_with_header;
-    httpProtoResponse response_server;
-    if (response.empty())
-    {
-        response_server.length = __not_found.length();
-        return response_server.defaultNotFound() + __not_found;
-    }
-    else
-    {
-        if (response.substr(0, REDIRECT.length()) == REDIRECT) ////////////////esto no se puede quedar asi
-        {
-            std::string cookie[] = {this->default_session_name, this->idGeneratorJWT.generateJWT(session.toString())};
-            
-            if (cookie[1].empty())
-                response_with_header = response_server.defaultRedirect(response.substr(REDIRECT.length()));
-            else
-                response_with_header = response_server.defaultRedirect(response.substr(REDIRECT.length()), cookie);
-        }
-        else
-        {
-            response_server.length = response.length();
-            std::string cookie[] = {this->default_session_name, this->idGeneratorJWT.generateJWT(session.toString())};
-
-            if (cookie[1].empty())
-                response_with_header += response_server.defaultOK();
-            else
-                response_with_header += response_server.defaultOK(cookie);
-            response_with_header += response;
-        }
-    }
-    return response_with_header;
-}
-
 int HttpServer::__response_file(SSL *ssl, int socket, const std::string &path, const std::string &type)
 {
     std::vector<std::string> data_to_send = std::vector<std::string>();
-    httpProtoResponse response_serv = httpProtoResponse();
+    Response response_serv("", 200);
 
     std::ifstream file(path, std::ios::binary);
     if (!file.is_open() && !file.good())
     {
         std::cerr << "Error al abrir el archivo: " << path << std::endl;
-        __send_response(ssl, socket, response_serv.defaultNotFound());
+        Response not_found = Response(this->__not_found, 404);
+        __send_response(ssl, socket, not_found.generateResponse());
         return -1;
     }
 
@@ -150,17 +109,18 @@ int HttpServer::__response_file(SSL *ssl, int socket, const std::string &path, c
     if (!file.read(buffer_f.data(), fileSize))
     {
         std::cerr << "Error al leer el archivo: " << path << std::endl;
-        __send_response(ssl, socket, response_serv.defaultNotFound());
+        Response not_found = Response(this->__not_found, 404);
+        __send_response(ssl, socket, not_found.generateResponse());
         return -1;
     }
 
     // Construir la respuesta HTTP con el encabezado adecuado
 
-    response_serv.appendParam("Content-Type", type);
-    response_serv.appendParam("Content-Disposition", "attachment; filename=\"" + path.substr(path.find_last_of("/") + 1) + "\"");
-    response_serv.length = fileSize;
+    response_serv.addHeader("Content-Type", type);
+    response_serv.addHeader("Content-Disposition", "attachment; filename=\"" + path.substr(path.find_last_of("/") + 1) + "\"");
+    response_serv.setIsFile(type, fileSize);
 
-    data_to_send.push_back(response_serv.defaultOK());
+    data_to_send.push_back(response_serv.generateResponse());
     data_to_send.push_back(std::string(buffer_f.begin(), buffer_f.end()));
     __send_response(ssl, socket, data_to_send);
     return 0;
@@ -183,7 +143,8 @@ int HttpServer::__send_response(SSL *ssl, int socket, const std::vector<std::str
             return -1;
         }
     }
-    else{
+    else
+    {
         // Enviar el encabezado y el contenido del archivo al cliente
         if (send(socket, response[0].c_str(), response[0].size(), 0) < 0)
         {
@@ -272,82 +233,80 @@ int HttpServer::__handle_request(int socket, SSL *ssl)
 
     auto session_id = Session::IDfromJWT(http_headers.cookies[this->default_session_name]);
     int session_index = __find_match_session(session_id);
-    
+
     Session session = __get_session(session_index);
 
     // Buscar la ruta correspondiente en el std::vector de rutas
-    std::string response;
+    int indexRoute = -1;
 
-    if(!idGeneratorJWT.verifyJWT(http_headers.cookies[this->default_session_name])&&session_index!=-1)
+    if (!idGeneratorJWT.verifyJWT(http_headers.cookies[this->default_session_name]) && session_index != -1)
     {
-       httpProtoResponse response_server;
+        Response response_server(this->__unauthorized, 401);
         
-        response_server.length = this->__unauthorized.length();
-        response = response_server.defaultUnauthorized() + this->__unauthorized;
-        __send_response(ssl, socket, response);
+        __send_response(ssl, socket, response_server.generateResponse());
         __wait_socket(socket, ssl);
         return 0;
     }
 
     std::unordered_map<std::string, std::string> url_params;
-    for (const auto &route : this->routes)
+    for (int i = 0; i < routes.size(); i++)
     {
+        const auto &route = routes[i];
         if (__route_contains_params(route.path))
         {
             if (__match_path_with_route(http_headers.getRoute(), route.path, url_params))
             {
-                Request arg = Request(url_params, socket, ssl, http_headers, session, http_headers.getRequest());
-                response = route.handler(arg);
-                if (session.deleted)
-                    this->sessions.erase(this->sessions.begin() + session_index);
-                else if (session_index == -1)
-                    setNewSession(session);
-                else if (session_index != -1)
-                    this->sessions[session_index] = session;
-
-                __send_response(ssl, socket, __response_create(response, session));
-
-                __wait_socket(socket, ssl);
-                return 0;
+                indexRoute = i;
+                break;
             }
         }
         else if (route.path == http_headers.getRoute())
         {
-            Request arg = Request(url_params, socket, ssl, http_headers, session, http_headers.getRequest());
-            response = route.handler(arg);
-            if (session.deleted)
-                this->sessions.erase(this->sessions.begin() + session_index);
-            else if (!session.isEmpty() && session_index == -1)
-                setNewSession(session);
-            else if (!session.isEmpty() && session_index != -1)
-                this->sessions[session_index] = session;
+            indexRoute = i;
+            break;
+        }
+    }
 
-            __send_response(ssl, socket, __response_create(response, session));
+    if (indexRoute != -1)
+    {
+        Request arg = Request(url_params, socket, ssl, http_headers, session, http_headers.getRequest());
+        auto responseHandler = routes[indexRoute].handler(arg);
+        Response response = std::holds_alternative<string>(responseHandler) 
+                                ? Response(std::get<string>(responseHandler)) : std::get<Response>(responseHandler);
 
+        if (session.deleted)
+            this->sessions.erase(this->sessions.begin() + session_index);
+        else if (session_index == -1)
+            setNewSession(session);
+        else if (session_index != -1)
+            this->sessions[session_index] = session;
+
+        response.addSessionCookie(this->default_session_name, this->idGeneratorJWT.generateJWT(session.toString()));
+
+        __send_response(ssl, socket, response.generateResponse());
+
+        __wait_socket(socket, ssl);
+        return 0;
+    }
+
+    // encontrar ruta de archivos (si existiera)
+
+    for (const auto &route_file : routesFile)
+    {
+        std::string::size_type pos = http_headers.getRoute().find(route_file.path);
+        if (pos != std::string::npos)
+        {
+            // Coincidencia encontrada, reemplazar la ruta URL con la ruta local
+            std::string localPath = http_headers.getRoute();
+            localPath.replace(pos, route_file.path.length(), route_file.path);
+            __response_file(ssl, socket, localPath.substr(1), route_file.type);
             __wait_socket(socket, ssl);
             return 0;
         }
     }
 
-    // encontrar ruta de archivos (si existiera)
-    if (response.empty())
-    {
-        for (const auto &route_file : routesFile)
-        {
-            std::string::size_type pos = http_headers.getRoute().find(route_file.path);
-            if (pos != std::string::npos)
-            {
-                // Coincidencia encontrada, reemplazar la ruta URL con la ruta local
-                std::string localPath = http_headers.getRoute();
-                localPath.replace(pos, route_file.path.length(), route_file.path);
-                __response_file(ssl, socket, localPath.substr(1), route_file.type);
-                __wait_socket(socket, ssl);
-                return 0;
-            }
-        }
-    }
-
-    __send_response(ssl, socket, __response_create(response, session));
+    Response notFound(this->__not_found, 404);
+    __send_response(ssl, socket, notFound.generateResponse());
 
     __wait_socket(socket, ssl);
     return 0;

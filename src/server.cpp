@@ -1,7 +1,7 @@
 #include "server.h"
 #include "templating.h"
 
-HttpServer::HttpServer() : idGeneratorJWT(uuid::generate_uuid_v4())
+HttpServer::HttpServer()
 {
     template_render->server = this;
 }
@@ -22,10 +22,9 @@ struct in_addr hostnameToIp(const char *hostname)
     return addr;
 }
 
-HttpServer::HttpServer(int port_server, char *hostname, int max_connections)
-    : port(port_server), MAX_CONNECTIONS(max_connections), idGeneratorJWT(uuid::generate_uuid_v4())
+HttpServer::HttpServer(int port_server, char *hostname)
+    : port(port_server)
 {
-
     host = hostname;
     // Convierte la dirección IP en formato de cadena a representación binaria
     ip_host_struct = hostnameToIp(host);
@@ -33,11 +32,9 @@ HttpServer::HttpServer(int port_server, char *hostname, int max_connections)
     template_render = new Templating();
     template_render->server = this;
 }
-HttpServer::HttpServer(int port_server, const string SSLcontext_server[], const char *secret_key, char *hostname, int max_connections )
-    : port(port_server), MAX_CONNECTIONS(max_connections), idGeneratorJWT(string(secret_key))
+HttpServer::HttpServer(int port_server, const string SSLcontext_server[], char *hostname )
+    : port(port_server)
 {
-    
-
     host = hostname;
     // Convierte la dirección IP en formato de cadena a representación binaria
     ip_host_struct = hostnameToIp(host);
@@ -126,14 +123,46 @@ void HttpServer::__startListener()
 
 void HttpServer::startListener()
 {
+    if (this->__setup() != 0) throw std::runtime_error("Error: setup failed");
+
     if (HTTPS)
-        __startListenerSSL();
+        this->__startListenerSSL();
     else
-        __startListener();
+        this->__startListener();
 }
 
-int HttpServer::setup()
+int HttpServer::__setup()
 {
+    // Configurar el servidor
+    for (auto &data : data_)
+    {
+        if(data.first == "max_connections"){
+            if(std::holds_alternative<int>(data.second)) this->MAX_CONNECTIONS = std::get<int>(data.second);
+            else throw std::runtime_error("Error: max_connections must be an integer");
+        }
+        else if(data.first == "secret_key"){
+            if(std::holds_alternative<std::string>(data.second)) this->idGeneratorJWT = idGenerator(std::get<std::string>(data.second));
+            else throw std::runtime_error("Error: secret_key must be a string");
+        }
+        else if(data.first == "default_session_name"){
+            if(std::holds_alternative<std::string>(data.second)) this->default_session_name = std::get<std::string>(data.second);
+            else throw std::runtime_error("Error: default_session_name must be a string");
+        }
+        else if(data.first == "not_found"){
+            if(std::holds_alternative<std::string>(data.second)) this->__not_found = std::get<std::string>(data.second);
+            else throw std::runtime_error("Error: not_found must be a string");
+        }
+        else if(data.first == "internal_server_error"){
+            if(std::holds_alternative<std::string>(data.second)) this->__internal_server_error = std::get<std::string>(data.second);
+            else throw std::runtime_error("Error: internal_server_error must be a string");
+        }
+        else if(data.first == "unauthorized"){
+            if(std::holds_alternative<std::string>(data.second)) this->__unauthorized = std::get<std::string>(data.second);
+            else throw std::runtime_error("Error: unauthorized must be a string");
+        }
+    }
+
+
     if (HTTPS)
     {
         // Inicializar OpenSSL
@@ -162,13 +191,6 @@ int HttpServer::setup()
 
     // Configurar la estructura de la dirección del servidor
     serverAddress.sin_family = AF_INET;
-    //////////
-    // struct addrinfo hints, *res;
-    // memset(&hints, 0, sizeof(hints));
-    // hints.ai_family = AF_INET;
-    // getaddrinfo(host, nullptr, &hints, &res);
-    //  struct in_addr address = reinterpret_cast<struct sockaddr_in*>(res->ai_addr)->sin_addr;
-    // serverAddress.sin_addr = address;
     serverAddress.sin_addr.s_addr = INADDR_ANY; //////////////////////////////////////ARREGLAR
     serverAddress.sin_port = htons(port);
 
@@ -192,7 +214,12 @@ int HttpServer::setup()
     return 0;
 }
 
-void HttpServer::addRoute(const string &path, function<string(Request &)> handler, vector<string> methods)
+std::variant<std::string, int>& HttpServer::operator[](const std::string& key) {
+    return data_[key]; 
+}
+
+
+void HttpServer::addRoute(const string &path, types::FunctionHandler handler, vector<string> methods)
 {
     this->routes.push_back({path, methods, [handler](Request &args)
                       {
