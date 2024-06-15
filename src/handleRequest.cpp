@@ -1,54 +1,41 @@
 #include "server.h"
 #include "url_encoding.h"
+#include <unordered_map>
 
 #ifndef RESPONSE_TYPE
 #define RESPONSE_TYPE
 const std::string response_type[] = {"FOLDER", "FILE", "URL"}; // orden de cada tipo de respuesta
 #endif
 
-std::string __find_cookie(std::vector<Session> &sessions, std::string id)
+
+bool __match_path_with_route(const std::string &path, const std::string &routePath, std::unordered_map<std::string, std::string> &url_params)
 {
-    for (auto &session : sessions)
-        if (session.getId() == id)
-            return session.toString();
-    return std::string();
-}
+    const std::regex routeRegex("^" + std::regex_replace(routePath, std::regex("<([^>]+)>"), "([^/]+)") + "$");
+    std::smatch matches;
 
-bool __match_path_with_route(const std::string &path, const std::string &routePath, std::vector<std::string> &routeVars)
-{
-    std::istringstream pathStream(path);
-    std::istringstream routePathStream(routePath);
-
-    std::string pathSegment;
-    std::string routeSegment;
-
-    while (std::getline(pathStream, pathSegment, '/'))
+    if (!std::regex_match(path, matches, routeRegex))
     {
-        if (!std::getline(routePathStream, routeSegment, '/'))
-        {
-            // La ruta tiene menos segmentos que el path
-            return false;
-        }
-
-        if (routeSegment != pathSegment)
-        {
-            if (routeSegment.front() != '<' || routeSegment.back() != '>')
-            {
-                // Los segmentos no coinciden y no es una variable
-                return false;
-            }
-
-            // Es una variable, la guardamos
-            routeVars.push_back(pathSegment);
-        }
+        return false;
     }
 
-    return !std::getline(routePathStream, routeSegment, '/');
+    std::regex varNameRegex("<([^>]+)>");
+    auto varNameBegin = std::sregex_iterator(routePath.begin(), routePath.end(), varNameRegex);
+    auto varNameEnd = std::sregex_iterator();
+
+    for (std::sregex_iterator i = varNameBegin; i != varNameEnd; ++i)
+    {
+        std::smatch match = *i;
+        std::string varName = match.str(1);
+        url_params[varName] = matches[std::distance(varNameBegin, i) + 1].str();
+    }
+
+    return true;
 }
 
-bool __route_contains_variables(const std::string &routePath)
+bool __route_contains_params(const std::string &routePath)
 {
-    return (routePath.find('<') != std::string::npos && routePath.find('>') != std::string::npos);
+    const std::regex paramRegex("<[^>]+>");
+    return std::regex_search(routePath, paramRegex);
 }
 
 std::string __recv(SSL *ssl, int socket)
@@ -280,10 +267,10 @@ int HttpServer::__handle_request(int socket, SSL *ssl)
 {
     std::string request(UrlEncoding::decodeURIComponent(__recv(ssl, socket)));
 
-    httpMethods http_method(request);
-    std::cout << http_method.route << std::endl;
+    httpHeaders http_headers(request);
+    std::cout << http_headers.getRoute() << std::endl;
 
-    auto session_id = Session::IDfromJWT(http_method.params.cookies[this->default_session_name]);
+    auto session_id = Session::IDfromJWT(http_headers.cookies[this->default_session_name]);
     int session_index = __find_match_session(session_id);
     
     Session session = __get_session(session_index);
@@ -291,27 +278,25 @@ int HttpServer::__handle_request(int socket, SSL *ssl)
     // Buscar la ruta correspondiente en el std::vector de rutas
     std::string response;
 
-    if(!idGeneratorJWT.verifyJWT(http_method.params.cookies[this->default_session_name])&&session_index!=-1)
+    if(!idGeneratorJWT.verifyJWT(http_headers.cookies[this->default_session_name])&&session_index!=-1)
     {
-        const std::string __unauthorized = "<html><head><title>400 Bad Request</title></head><body><h1>400 Bad Request</h1><p>Your browser sent a request that this server could not understand.</p></body></html>";
-        response = "HTTP/1.1 400 Bad Request\r\n";
-        response += "Content-Type: text/html\r\n";
-        response += "Content-Length: " + std::to_string(__unauthorized.length()) + "\r\n";
-        response += "\r\n";
-        response += __unauthorized;
+       httpProtoResponse response_server;
+        
+        response_server.length = this->__unauthorized.length();
+        response = response_server.defaultUnauthorized() + this->__unauthorized;
         __send_response(ssl, socket, response);
         __wait_socket(socket, ssl);
         return 0;
     }
 
-    std::vector<std::string> routeVars;
-    for (const auto &route : routes)
+    std::unordered_map<std::string, std::string> url_params;
+    for (const auto &route : this->routes)
     {
-        if (__route_contains_variables(route.path))
+        if (__route_contains_params(route.path))
         {
-            if (__match_path_with_route(http_method.route, route.path, routeVars))
+            if (__match_path_with_route(http_headers.getRoute(), route.path, url_params))
             {
-                Args arg = Args(routeVars, socket, ssl, http_method, session);
+                Request arg = Request(url_params, socket, ssl, http_headers, session, http_headers.getRequest());
                 response = route.handler(arg);
                 if (session.deleted)
                     this->sessions.erase(this->sessions.begin() + session_index);
@@ -326,9 +311,9 @@ int HttpServer::__handle_request(int socket, SSL *ssl)
                 return 0;
             }
         }
-        else if (route.path == http_method.route)
+        else if (route.path == http_headers.getRoute())
         {
-            Args arg = Args(routeVars, socket, ssl, http_method, session);
+            Request arg = Request(url_params, socket, ssl, http_headers, session, http_headers.getRequest());
             response = route.handler(arg);
             if (session.deleted)
                 this->sessions.erase(this->sessions.begin() + session_index);
@@ -349,11 +334,11 @@ int HttpServer::__handle_request(int socket, SSL *ssl)
     {
         for (const auto &route_file : routesFile)
         {
-            std::string::size_type pos = http_method.route.find(route_file.path);
+            std::string::size_type pos = http_headers.getRoute().find(route_file.path);
             if (pos != std::string::npos)
             {
                 // Coincidencia encontrada, reemplazar la ruta URL con la ruta local
-                std::string localPath = http_method.route;
+                std::string localPath = http_headers.getRoute();
                 localPath.replace(pos, route_file.path.length(), route_file.path);
                 __response_file(ssl, socket, localPath.substr(1), route_file.type);
                 __wait_socket(socket, ssl);
