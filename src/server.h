@@ -161,7 +161,7 @@ public:
     /// @param route Route to the file
     /// @param data Content to pass to the file
     /// @return The rendered file as std::string to send to the client
-    std::string Render(const std::string &route, const std::string& data = std::string());
+    std::string Render(const std::string &route, const std::string& data );
 
     Response Redirect(std::string url);
     Response NotFound();
