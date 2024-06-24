@@ -1,29 +1,58 @@
 #include <iostream>
 #include "src/server.h"
-#include "users.hpp"
 #include "src/usersdb.h"
-#include "src/idGenerator.h"
-
-#include "src/json.hpp"
+#include "src/curl.h"
 
 
+
+using json = nlohmann::json;
 using namespace std;
 
 const int PORT = 8444;
 
+CurlHandler curl;
 
 string HTTPScontext[] = {"secrets/cert.pem", "secrets/key.pem"};
 
 HttpServer server(PORT, HTTPScontext, "ubuntu-manu.local");
 UsersDB DATABASE("secrets/users.db");
 
+types::HttpResponse showApiData(Request &req)
+{
+    auto data = curl.get("https://api.open-meteo.com/v1/forecast?latitude=52.52&longitude=13.41&hourly=temperature_2m", {"Content-Type: application/json"});
+    nlohmann::json json_data = nlohmann::json::parse(data);
+
+    // get the:
+    // "hourly": {
+    //     "temperature_2m": [ ... ],
+    //     "time": [ ... ]
+    // }
+    // and create a dictionary with the time and temperature
+    nlohmann::json hourly = json_data["hourly"];
+    nlohmann::json temperature_2m = hourly["temperature_2m"];
+    nlohmann::json time = hourly["time"];
+
+    json temps;
+
+    for (int i = 0; i < time.size(); i++)
+    {
+        temps.push_back({time[i], temperature_2m[i]});
+    }
+
+    return server.Render("templates/api_data.html", {{"data", temps}});
+}
 
 types::HttpResponse apiHome(Request &req)
 {
-    json j;
-    j["message"] = "Hello World";
-    j["id"] = req.parameters["id"];
-    string res = j.dump(4);
+    std::string url = "https://api.open-meteo.com/v1/forecast?latitude=52.52&longitude=13.41&hourly=temperature_2m";
+    std::vector<std::string> headers = {
+        "Content-Type: application/json"
+    };
+
+    std::string response = curl.get(url, headers);
+
+    nlohmann::json json_response = nlohmann::json::parse(response);
+    std::string res = json_response.dump(4);
 
     return Response(res, 200, {{"Content-Type", "application/json"}});
 }
@@ -35,13 +64,14 @@ types::HttpResponse home(Request &req)
         if (req.session["logged"] == "true")
         {
             DATABASE["POSTS"].insertRow({{"autor", req.session["user"]}, {"contenido", req.content["post"]}});
-            vector<post> POSTS;
+            vector<json> POSTS;
             try
             {
                 for (int i = 1; i <= DATABASE["POSTS"].countRows(); i++)
                 {
                     unordered_map post1 = DATABASE["POSTS"].getByID(to_string(i));
-                    post p = {{post1["autor"]}, post1["contenido"]};
+                    // {post1["autor"]}, post1["contenido"]
+                    json p = { {"user", post1["autor"]}, {"post", post1["contenido"]} };
                     POSTS.push_back(p);
                 }
             }
@@ -49,8 +79,7 @@ types::HttpResponse home(Request &req)
             {
                 std::cerr << e.what() << '\n';
             }
-
-            return server.Render("templates/home_logged.html", {{"user", req.session["user"]}, {"posts", posts_to_string(POSTS)}});
+            return server.Render("templates/home_logged.html", {{"user", req.session["user"]}, {"posts", POSTS}});
         }
         else
             return server.Render("templates/home.html");
@@ -60,13 +89,13 @@ types::HttpResponse home(Request &req)
     {
         if (req.session["logged"] == "true")
         {
-            vector<post> POSTS;
+            vector<json> POSTS;
             try
             {
                 for (size_t i = 1; i <= DATABASE["POSTS"].countRows(); i++)
                 {
                     unordered_map post1 = DATABASE["POSTS"].getByID(to_string(i));
-                    post p = {{post1["autor"]}, post1["contenido"]};
+                    json p = { {"user", post1["autor"]}, {"post", post1["contenido"]} };
                     POSTS.push_back(p);
                 }
             }
@@ -74,8 +103,9 @@ types::HttpResponse home(Request &req)
             {
                 std::cerr << e.what() << '\n';
             }
-
-            return server.Render("templates/home_logged.html", {{"user", req.session["user"]}, {"posts", posts_to_string(POSTS)}});
+            json data = {{"user", req.session["user"]}, {"posts", POSTS}};
+            std::cout << data.dump(4) << std::endl;
+            return server.Render("templates/home_logged.html", data);
         }
         else
             return server.Render("templates/home.html");
@@ -156,7 +186,10 @@ int main(int argc, char **argv)
     server["secret_key"] = uuid::generate_uuid_v4();
     server["max_connections"] = 10;
 
+    server.addRoute("/api", apiHome, {GET, POST});
     server.addRoute("/api/<id>", apiHome, {GET, POST});
+
+    server.addRoute("/show", showApiData, {GET, POST});
 
     // Ruta sin variables
     server.addRoute("/home", home, {GET, POST});
