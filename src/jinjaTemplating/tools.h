@@ -7,7 +7,7 @@
 #include <regex>
 #include <sstream>
 #include <fstream>
-#include <map>
+#include <unordered_map>
 
 #include "types.h"
 #include "json.hpp"
@@ -20,6 +20,13 @@ inline bool is_number(const nlohmann::json &j, std::string key)
     if (!j.contains(key))
         return false;
     return j[key].is_number_integer() || j[key].is_number_unsigned() || j[key].is_number_float();
+}
+
+inline double stringToNumber(const std::string &str)
+{
+    char *ptr;
+    auto r = std::strtod(str.c_str(), &ptr);
+    return !*ptr ? r : std::numeric_limits<double>::quiet_NaN();
 }
 
 inline nlohmann::json accessJsonValue(const nlohmann::json &data, const std::string &key)
@@ -63,25 +70,31 @@ inline double __evaluateExpression(std::string expression, const nlohmann::json 
             {
                 __preprocessExpression(expr, data);
                 // ckeck if is a number
-                char *ptr;
-                auto r = std::strtod(expr.c_str(), &ptr);
-                if (!*ptr)
-                    return r;
+                return stringToNumber(expr);
             }
             catch (const std::exception &e)
             {
-                nlohmann::json value = accessJsonValue(data, expr);
-                return value == nullptr ? 0 : value.get<long>();
+                auto value = accessJsonValue(data, expr);
+                if (value == nullptr)
+                    return 0;
+                if (value.is_number())
+                    return value.get<double>();
+                else if (value.is_string()){
+                    return stringToNumber(value.get<std::string>());
+                }
             }
-            return NAN;
+            return std::numeric_limits<double>::quiet_NaN();
         });
 
-    if (parser.compile(expression)){
-        double result = parser.evaluate();
-        return result;
+    try
+    {
+        if (parser.compile(expression)) return parser.evaluate();
+        else return std::numeric_limits<double>::quiet_NaN();
     }
-    else
+    catch(const std::exception& e)
+    {
         return std::numeric_limits<double>::quiet_NaN();
+    }
 }
 
 inline void __preprocessExpression(std::string &expression, const nlohmann::json &data)
@@ -136,8 +149,8 @@ inline std::pair<long, long> process_range(const std::string &iterable, const nl
 {
     const std::regex range_pattern(R"(range\(\s*([^{}])(?:\s*,\s*([^{}]+))?\s*\))");
     std::smatch match;
-    long n = 0;
-    long m = 0;
+    long n = -1;
+    long m = -1;
 
     if (std::regex_search(iterable, match, range_pattern))
     {
@@ -179,14 +192,15 @@ inline std::pair<long, long> process_range(const std::string &iterable, const nl
     return std::make_pair(n, m);
 }
 
-inline std::map<std::string, nlohmann::json> convertToMap(const nlohmann::json &data, const std::string &key)
+inline std::unordered_map<std::string, nlohmann::json> convertToMap(const nlohmann::json &data)
 {
-    std::map<std::string, nlohmann::json> map;
-    for (auto it = data[key].begin(); it != data[key].end(); ++it)
+    std::unordered_map<std::string, nlohmann::json> rmap;
+
+    for (auto it = data.begin(); it != data.end(); ++it)
     {
-        map[it.key()] = it.value();
+        rmap[it.key()] = it.value();
     }
-    return map;
+    return rmap;
 }
 
 
