@@ -1,0 +1,43 @@
+<!-- encode utf -->
+
+
+
+<!DOCTYPE html>
+<html lang="es">
+
+
+<head>
+    <link rel="stylesheet" href="{{urlfor('/templates/main.css')}}">
+    <meta charset="UTF-8">
+    <script type="text/javascript" src="{{urlfor('/templates/main.js')}}"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/charts.css/dist/charts.min.css">
+</head>
+
+
+<body>
+    <main class="main">
+        <h1>Aqui se enseñará la data de la API</h1>
+        <section id="data">
+            <table class="charts-css bar show-labels show-data-on-hover show-primary-axis" style="width: 50%;">
+                <!-- item[0] is the timestamp and item[1] the value -->
+                <thead>
+                    <tr>
+                        <th>Timestamp</th>
+                        <th>Value</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for item in data %}
+                <tr >
+                    <th scope="row" style="font-size: smaller; white-space: nowrap; width: fit-content; margin-left: -140px;"> {{item[0]}} </th> 
+                    <td style="--size: {{item[1] / 45}};">
+                        <span class="data">{{item[1]}}</span> 
+                        <span class="tooltip">data: {{item[1]}}<br>more info</span>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+            </table>
+        </section>
+    </main>
+</html>
