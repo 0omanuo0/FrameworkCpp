@@ -1,6 +1,6 @@
 #include "httpMethods.h"
 #include <iostream>
-#include "url_encoding.h"
+#include "tools/url_encoding.h"
 #include <algorithm>
 #include <cctype>
 #include <regex>
@@ -34,8 +34,6 @@ int httpHeaders::loadParams(const std::string &request)
     {
         this->method = match[1];
         this->route = match[2];
-        std::cout << "Method: " << this->method << std::endl;
-        std::cout << "Route: " << this->route << std::endl;
     }
 
     if (std::regex_match(this->route, match, queryRegex)) {

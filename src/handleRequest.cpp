@@ -1,6 +1,23 @@
 #include "server.h"
-#include "url_encoding.h"
+// include time for the current time
+#include <ctime>
+
 #include <unordered_map>
+
+std::string getCurrentTimestamp() {
+    // Obtiene el tiempo actual desde el epoch
+    auto now = std::chrono::system_clock::now();
+    // Convierte el tiempo a time_t para manipularlo como una estructura de tiempo tradicional
+    std::time_t now_time = std::chrono::system_clock::to_time_t(now);
+    // Convierte el time_t a una estructura tm
+    std::tm* now_tm = std::localtime(&now_time);
+
+    // Usa un stringstream para dar formato al tiempo
+    std::ostringstream oss;
+    oss << std::put_time(now_tm, "%H:%M:%S");
+    return oss.str();
+}
+
 
 bool __match_path_with_route(const std::string &path, const std::string &routePath, std::unordered_map<std::string, std::string> &url_params)
 {
@@ -229,12 +246,14 @@ int HttpServer::__handle_request(int socket, SSL *ssl)
     std::string request(UrlEncoding::decodeURIComponent(__recv(ssl, socket)));
 
     httpHeaders http_headers(request);
-    std::cout << http_headers.getRoute() << std::endl;
 
     auto session_id = Session::IDfromJWT(http_headers.cookies[this->default_session_name]);
     int session_index = __find_match_session(session_id);
 
     Session session = __get_session(session_index);
+
+    // print the request method, route and query as [time] METHOD route query
+    std::cout << "[" << getCurrentTimestamp() << "] " << http_headers.getMethod() << " " << http_headers.getRoute() << " " << http_headers.getQuery() << std::endl;
 
     // Buscar la ruta correspondiente en el std::vector de rutas
     int indexRoute = -1;
