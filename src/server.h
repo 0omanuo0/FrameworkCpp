@@ -18,9 +18,10 @@
 
 #include "httpMethods.h"
 #include "session.h"
-#include "idGenerator.h"
+#include "tools/idGenerator.h"
+#include "tools/url_encoding.h"
 #include "request.h"
-#include "templating.h"
+#include "jinjaTemplating/templating.h"
 #include "response.h"
 
 #ifndef SERVER_VALUES
@@ -145,11 +146,22 @@ public:
     /// @param endpoint Route to the file, also the route to the file in the browse
     void urlfor(const std::string &endpoint);
 
+    // /// @brief Function to render a jinja or html file
+    // /// @param route Route to the file
+    // /// @param data Content to pass to the file
+    // /// @return The rendered file as std::string to send to the client
+    // std::string Render(const std::string &route, std::map<std::string, std::string> data);
+
     /// @brief Function to render a jinja or html file
     /// @param route Route to the file
     /// @param data Content to pass to the file
     /// @return The rendered file as std::string to send to the client
-    std::string Render(const std::string &route, std::map<std::string, std::string> data = std::map<std::string, std::string>());
+    std::string Render(const std::string &route, nlohmann::json data = nlohmann::json());
+    /// @brief Function to render a jinja or html file
+    /// @param route Route to the file
+    /// @param data Content to pass to the file
+    /// @return The rendered file as std::string to send to the client
+    std::string Render(const std::string &route, const std::string& data = std::string());
 
     Response Redirect(std::string url);
     Response NotFound();

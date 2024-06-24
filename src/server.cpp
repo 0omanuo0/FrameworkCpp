@@ -1,5 +1,5 @@
 #include "server.h"
-#include "templating.h"
+#include "jinjaTemplating/templating.h"
 
 HttpServer::HttpServer()
 {
@@ -46,7 +46,17 @@ HttpServer::HttpServer(int port_server, const string SSLcontext_server[], char *
     template_render->server = this;
 }
 
-string HttpServer::Render(const string &route, map<string, string> data)
+// string HttpServer::Render(const string &route, map<string, string> data)
+// {
+//     return template_render->Render(route, data);
+// };
+
+string HttpServer::Render(const string &route, nlohmann::json data)
+{
+    return template_render->Render(route, data);
+};
+
+string HttpServer::Render(const string &route, const string &data)
 {
     return template_render->Render(route, data);
 };
