@@ -1,6 +1,7 @@
 CXX = g++
 CXXFLAGS_COMMON = -Isrc 
-LDFLAGS = -lssl -lcrypto -lsqlite3
+# ssl, crypto, sqlite3, curl
+LDFLAGS = -lssl -lcrypto -lsqlite3 -lcurl
 
 SRC_DIR = src
 BIN_DIR = bin
