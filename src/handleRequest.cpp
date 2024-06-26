@@ -112,6 +112,7 @@ int HttpServer::__response_file(SSL *ssl, int socket, const std::string &path, c
     {
         std::cerr << "Error al abrir el archivo: " << path << std::endl;
         Response not_found = Response(this->__not_found, 404);
+        std::cout << not_found.getResponseCode() << std::endl;
         __send_response(ssl, socket, not_found.generateResponse());
         return -1;
     }
@@ -127,6 +128,7 @@ int HttpServer::__response_file(SSL *ssl, int socket, const std::string &path, c
     {
         std::cerr << "Error al leer el archivo: " << path << std::endl;
         Response not_found = Response(this->__not_found, 404);
+        std::cout << not_found.getResponseCode() << std::endl;
         __send_response(ssl, socket, not_found.generateResponse());
         return -1;
     }
@@ -139,6 +141,7 @@ int HttpServer::__response_file(SSL *ssl, int socket, const std::string &path, c
 
     data_to_send.push_back(response_serv.generateResponse());
     data_to_send.push_back(std::string(buffer_f.begin(), buffer_f.end()));
+    std::cout << response_serv.getResponseCode() << std::endl;
     __send_response(ssl, socket, data_to_send);
     return 0;
 }
@@ -253,7 +256,7 @@ int HttpServer::__handle_request(int socket, SSL *ssl)
     Session session = __get_session(session_index);
 
     // print the request method, route and query as [time] METHOD route query
-    std::cout << "[" << getCurrentTimestamp() << "] " << http_headers.getMethod() << " " << http_headers.getRoute() << " " << http_headers.getQuery() << std::endl;
+    std::cout << "[" << getCurrentTimestamp() << "] " << http_headers.getMethod() << " " << http_headers.getRoute() << " " << http_headers.getQuery();
 
     // Buscar la ruta correspondiente en el std::vector de rutas
     int indexRoute = -1;
@@ -261,6 +264,7 @@ int HttpServer::__handle_request(int socket, SSL *ssl)
     if (!idGeneratorJWT.verifyJWT(http_headers.cookies[this->default_session_name]) && session_index != -1)
     {
         Response response_server(this->__unauthorized, 401);
+        std::cout << response_server.getResponseCode() << std::endl;
         
         __send_response(ssl, socket, response_server.generateResponse());
         __wait_socket(socket, ssl);
@@ -302,6 +306,7 @@ int HttpServer::__handle_request(int socket, SSL *ssl)
 
         response.addSessionCookie(this->default_session_name, this->idGeneratorJWT.generateJWT(session.toString()));
 
+        std::cout << response.getResponseCode() << std::endl;
         __send_response(ssl, socket, response.generateResponse());
 
         __wait_socket(socket, ssl);
@@ -318,6 +323,8 @@ int HttpServer::__handle_request(int socket, SSL *ssl)
             // Coincidencia encontrada, reemplazar la ruta URL con la ruta local
             std::string localPath = http_headers.getRoute();
             localPath.replace(pos, route_file.path.length(), route_file.path);
+
+            
             __response_file(ssl, socket, localPath.substr(1), route_file.type);
             __wait_socket(socket, ssl);
             return 0;
@@ -325,6 +332,7 @@ int HttpServer::__handle_request(int socket, SSL *ssl)
     }
 
     Response notFound(this->__not_found, 404);
+    std::cout << notFound.getResponseCode() << std::endl;
     __send_response(ssl, socket, notFound.generateResponse());
 
     __wait_socket(socket, ssl);
