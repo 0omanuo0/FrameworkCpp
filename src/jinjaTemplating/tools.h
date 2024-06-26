@@ -29,29 +29,62 @@ inline double stringToNumber(const std::string &str)
     return !*ptr ? r : std::numeric_limits<double>::quiet_NaN();
 }
 
+inline std::string trimm(const std::string &str);
+
 inline nlohmann::json accessJsonValue(const nlohmann::json &data, const std::string &key)
 {
-    std::regex re(R"(\.|\[|\])");
-    std::sregex_token_iterator iter(key.begin(), key.end(), re, -1);
-    std::sregex_token_iterator end;
+    std::regex pattern(R"(([^.\[\]]+)|(\[.*?\]))");
+    auto cp = trimm(key);
+    std::regex_iterator<std::string::iterator> iter(cp.begin(), cp.end(), pattern);
+    std::regex_iterator<std::string::iterator> end;
+
     nlohmann::json value = data;
     for (; iter != end; ++iter)
     {
         try
         {
-            if (iter->str().empty())
-                continue; // skip empty strings
-            if (iter->str().front() >= '0' && iter->str().front() <= '9')
-                value = value[std::stoi(iter->str())];
-            else
-                value = value[iter->str()];
+            if (!iter->str(1).empty())
+            {
+                auto t = iter->str(1);
+                if (t.front() >= '0' && t.front() <= '9')
+                    value = value[std::stoi(t)];
+                else
+                    value = value[t];
+            }
+            else if(!iter->str(2).empty())
+            {
+                auto t = iter->str(2);
+                t = t.substr(1, t.size() - 2);
+                if (t.front() >= '0' && t.front() <= '9')
+                    value = value[std::stoi(t)];
+                else{
+                    auto g = accessJsonValue(data, t);
+                    if(g.is_number_integer() || g.is_number_unsigned() || g.is_number_float()||g.is_number())
+                        value = value[g.get<long>()];
+                    else if(g.is_string())
+                        value = value[g.get<std::string>()];
+                    else
+                        throw std::runtime_error("The key " + key + " is not valid");
+
+                }
+            }
         }
         catch (const std::exception &e)
         {
+            auto dataa = data.dump();
+            // std::cout << dataa << std::endl;
             throw std::runtime_error("The key " + key + " is not valid");
         }
     }
     return value;
+}
+
+inline std::string trimm(const std::string &str)
+{
+    std::string s = str;
+    s.erase(0, str.find_first_not_of(" \n\r\t"));
+    s.erase(s.find_last_not_of(" \n\r\t") + 1);
+    return s;
 }
 
 inline void __preprocessExpression(std::string &expression, const nlohmann::json &data);

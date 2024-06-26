@@ -371,7 +371,7 @@ std::string Templating::__renderExpressions(std::string expression, nlohmann::js
         // Check if the result is a NaN, if so, it could be a urlfor expression or just a string variable
         if (std::isnan(result))
         {
-            if (std::regex_search(value, match, urlfor_pattern))
+            if (std::regex_search(value, match, urlfor_string_pattern))
             {
                 std::string url = match[2].str();
 
@@ -379,6 +379,22 @@ std::string Templating::__renderExpressions(std::string expression, nlohmann::js
 
                 if (urlData == nullptr)
                     url = match[2].str();
+                else if(urlData.is_string())
+                    url = urlData.get<std::string>();
+                else
+                    url = urlData.dump();
+
+                this->server->urlfor(url);
+                resultString += url;
+            }
+            else if (std::regex_search(value, match, urlfor_pattern))
+            {
+                std::string url = match[1].str();
+
+                auto urlData = accessJsonValue(data, url);
+
+                if (urlData == nullptr)
+                    url = match[1].str();
                 else if(urlData.is_string())
                     url = urlData.get<std::string>();
                 else
@@ -399,6 +415,9 @@ std::string Templating::__renderExpressions(std::string expression, nlohmann::js
             }
             return resultString + right;
         }
+        // if can be integer converted
+        if (result == (int)result)
+            return resultString + std::to_string((int)result) + right;
 
         return resultString + std::to_string(result) + right;
     }
