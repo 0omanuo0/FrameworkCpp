@@ -19,6 +19,7 @@ class Response
 private:
     /* data */
     std::string type = httpStatus::Code[200];
+    int statusCode = 200;
     std::string message;
     std::map<std::string, std::string> headers;
     std::map<std::string, std::string> cookies;
@@ -27,6 +28,7 @@ private:
 public:
 
     Response(const std::string &responseMessage, int responseCode=200, std::map<std::string, std::string> headers = {});
+    int getResponseCode() {return this->statusCode;}
 
     void addHeader(std::string key, std::string value) {this->headers[key] = value;}
     void addSessionCookie(std::string key, std::string sessionID) {this->cookies[key] = sessionID;}

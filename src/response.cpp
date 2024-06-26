@@ -29,7 +29,7 @@
 #endif
 
 Response::Response(const std::string &responseMessage, int responseCode, std::map<std::string, std::string> headers)
-    :message(responseMessage), type(httpStatus::Code[responseCode]), headers(headers) {}
+    :message(responseMessage), type(httpStatus::Code[responseCode]), headers(headers), statusCode(responseCode) {}
 
 void Response::setIsFile(std::string contentType, int fileLength){
     this->isFile = true;
