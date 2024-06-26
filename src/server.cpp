@@ -141,13 +141,50 @@ void HttpServer::startListener()
         this->__startListener();
 }
 
+void HttpServer::setEnv(const std::string &envPath)
+{
+    this->envPath = envPath;
+}
+
+int HttpServer::__loadEnv()
+{
+    // check if exists envPath
+    if (!filesystem::exists(envPath))
+    {
+        // display that .env not exists so is using default values
+        std::cout << "[Warning]: .env file not found, using default values" << std::endl;
+        return 1;
+    }
+    std::cout << "[Log]: Loading .env file" << std::endl;
+
+    std::ifstream file(envPath);
+    if (!file.is_open())return 2;
+
+    std::string line;
+    while (std::getline(file, line))
+    {
+        std::istringstream is_line(line);
+        std::string key;
+        if(line[0] == '#') continue;
+
+        if (std::getline(is_line, key, '='))
+        {
+            std::string value;
+            if (std::getline(is_line, value)) this->data_[key] = value;
+        }
+    }
+    return 0;
+}
+
 int HttpServer::__setup()
 {
+    if (this->__loadEnv() > 1) throw std::runtime_error("Error: loadEnv failed");
     // Configurar el servidor
     for (auto &data : data_)
     {
         if(data.first == "max_connections"){
             if(std::holds_alternative<int>(data.second)) this->MAX_CONNECTIONS = std::get<int>(data.second);
+            else if(std::holds_alternative<std::string>(data.second)) this->MAX_CONNECTIONS = std::stoi(std::get<std::string>(data.second));
             else throw std::runtime_error("Error: max_connections must be an integer");
         }
         else if(data.first == "secret_key"){

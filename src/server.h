@@ -98,6 +98,7 @@ private:
     idGenerator idGeneratorJWT = idGenerator("");
 
     std::unordered_map<std::string, std::variant<std::string, int>> data_;
+    std::string envPath = ".env";
 
     int __find_match_session(std::string id);
     Session __get_session(int index);
@@ -113,6 +114,7 @@ private:
     void __startListenerSSL();
     void __startListener();
     int __setup();
+    int __loadEnv();
 
     void addRouteFile(const std::string &endpoint, const std::string &extension);
     Session setNewSession(Session session);
@@ -120,6 +122,9 @@ private:
 public:
     /// @brief Function to set the configuration of the server
     std::variant<std::string, int>& operator[](const std::string& key);
+
+    /// @brief Function to set the path to the .env configuration of the server
+    void setEnv(const std::string &filePath);
 
     /// @brief Function to get the port of the server
     int getPort(){return this->port;}
