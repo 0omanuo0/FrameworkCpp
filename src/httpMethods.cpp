@@ -1,14 +1,7 @@
 #include "httpMethods.h"
-#include <iostream>
-#include "tools/url_encoding.h"
-#include <algorithm>
-#include <cctype>
-#include <regex>
 
-constexpr unsigned int hash(const char *str, int h = 0)
-{
-    return !str[h] ? 5381 : (hash(str, h + 1) * 33) ^ str[h];
-}
+
+
 
 std::string trim(const std::string &str)
 {
@@ -36,11 +29,14 @@ int httpHeaders::loadParams(const std::string &request)
         this->route = match[2];
     }
 
-    if (std::regex_match(this->route, match, queryRegex)) {
+    if (std::regex_match(this->route, match, queryRegex))
+    {
         this->route = match[1];
 
-        if (match[3].matched) this->query = match[3];
-        else this->query = "";
+        if (match[3].matched)
+            this->query = match[3];
+        else
+            this->query = "";
     }
 
     if (!this->route.empty() && this->route.back() == '/') // Eliminar el último carácter
@@ -68,107 +64,105 @@ void httpHeaders::__loadParams(const std::string &request)
 
         size_t paramStart = start;
         size_t paramEnd = request.find(" ", paramStart);
-        std::string param = request.substr(paramStart, paramEnd - paramStart);
+        std::string param = request.substr(paramStart, paramEnd - paramStart -1);
 
         size_t valueStart = paramEnd + 1;
         size_t valueEnd = end;
         std::string value = request.substr(valueStart, valueEnd - valueStart);
 
-        switch (hash(param.c_str()))
+        // find the type of the header
+        auto headerType = ACEPTED_REQUEST_HEADERS.find(param);
+        if (headerType != ACEPTED_REQUEST_HEADERS.end())
         {
-        case hash("Host:"):
-            this->host = value;
-            break;
-        case hash("User-Agent:"):
-            this->user_agent = value;
-            break;
-        case hash("Accept:"):
-        {
-            std::istringstream iss(value);
-            std::string token;
-            while (std::getline(iss, token, ','))
+            switch (headerType->second)
             {
-                this->accept.push_back(token);
-            }
-            break;
-        }
-        case hash("Cookie:"):
-        {
-            std::istringstream iss(value);
-            std::string token;
-            while (std::getline(iss, token, ';'))
+            case headerType::STRING:
+                this->Headers[param] = header(value);
+                break;
+            case headerType::LIST:
             {
-                std::string key = token.substr(0, token.find("="));
-                std::string value2;
-                size_t equalsPos = token.find("=");
-                if (equalsPos != std::string::npos)
+                std::istringstream iss(value);
+                std::vector<std::string> tokens;
+                std::string token;
+                while (std::getline(iss, token, ','))
                 {
-                    value2 = token.substr(equalsPos + 1);
+                    tokens.push_back(token);
                 }
-                this->cookies.insert(std::make_pair(trim(key), value2));
+                this->Headers[param] = header(tokens);
+                break;
             }
-            break;
-        }
-        case hash("Accept-Language:"):
-        {
-            std::istringstream iss(value);
-            std::string token;
-            while (std::getline(iss, token, ','))
+            case headerType::DICT:
             {
-                this->accept_language.push_back(token);
+                std::istringstream iss(value);
+                std::map<std::string, std::string> tokens;
+                std::string token;
+                while (std::getline(iss, token, ';'))
+                {
+                    size_t equalsPos = token.find('=');
+                    std::string key = trim(token.substr(0, equalsPos));
+                    std::string value2 = (equalsPos == std::string::npos) ? "" : token.substr(equalsPos + 1);
+                    tokens[key] = value2;
+                }
+                this->Headers[param] = header(tokens);
+                break;
             }
-            break;
-        }
-        case hash("Accept-Encoding:"):
-        {
-            std::istringstream iss(value);
-            std::string token;
-            while (std::getline(iss, token, ','))
+            case headerType::PAIR:
             {
-                this->accept_encoding.push_back(token);
+                size_t equalsPos = value.find('=');
+                std::string key = trim(value.substr(0, equalsPos));
+                std::string value2 = (equalsPos == std::string::npos) ? "" : value.substr(equalsPos + 1);
+                auto pair = std::make_pair(key, value2);
+                this->Headers[param] = header(pair);
+                break;
             }
-            break;
-        }
-        case hash("DNT:"):
-            this->DNT = value;
-            break;
-        case hash("Connection:"):
-            this->connection = value;
-            break;
-        case hash("Upgrade-Insecure-Requests:"):
-            this->upgrade_insecure_requests = value;
-            break;
-        case hash("Content-Type:"):
-            this->content_type = value;
-            break;
-        case hash("Origin:"):
-            this->origin = value;
-            break;
-        case hash("Referer:"):
-            this->referer = value;
-            break;
-        case hash("Content-Length:"):
-            content_length = value;
-            break;
-        default:
-            break;
+            }
         }
 
         start = end + 2;
         end = request.find("\r\n", start);
     }
 
+    content_length = this->Headers["Content-Length"].get<std::string>();
     if (!content_length.empty())
     {
-        const std::regex pattern("^\r\n*|([^=&]+)=([^&]*)");
+        std::string input = request.substr(request.find_last_of("\r\n") + 1, std::stoi(content_length));
+        auto a = this->Headers["Content-Type"].get<std::string>();
+
+        Content contentBody(input, a);
+        this->body = contentBody;
+    }
+    this->cookies = this->Headers["Cookie"].get<std::map<std::string, std::string>>();
+}
+
+Content::Content(const std::string& stringContent, const std::string& encodingType)
+{
+    if(encodingType == "application/x-www-form-urlencoded" )
+    {
+        const std::regex pattern("([^=&]+)=([^&]*)");
         std::smatch matches;
 
-        std::string input = request.substr(request.find_last_of("\r\n") + 1, std::stoi(content_length));
+        std::string input = stringContent;
+        std::map<std::string, std::string> temp_contentData;
 
         while (std::regex_search(input, matches, pattern))
         {
-            this->content[matches[1].str()] = matches[2].str();
+            temp_contentData[matches[1].str()] = matches[2].str();
             input = matches.suffix();
         }
+        this->contentData = temp_contentData;
+    }
+    else if(encodingType == "application/json")
+    {
+        this->contentData = nlohmann::json::parse(stringContent);
+    }
+    else if(encodingType == "application/octet-stream")
+    {
+        std::vector<char> byteContent(stringContent.begin(), stringContent.end());
+        this->contentData = byteContent;
+    }
+    else
+    {
+        this->contentData = stringContent;
     }
 }
+
