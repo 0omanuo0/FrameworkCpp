@@ -63,7 +63,7 @@ types::HttpResponse home(Request &req)
     {
         if (req.session["logged"] == "true")
         {
-            DATABASE["POSTS"].insertRow({{"autor", req.session["user"]}, {"contenido", req.content["post"]}});
+            DATABASE["POSTS"].insertRow({{"autor", req.session["user"]}, {"contenido", req.form["post"]}});
             vector<json> POSTS;
             try
             {
@@ -138,9 +138,12 @@ types::HttpResponse login(Request &req)
         // vector<vector<string>> USERS;
         try
         {
-            vector<string> user = DATABASE.getUser(req.content["fname"]);
+            vector<string> user = DATABASE.getUser(req.form["fname"]);
 
-            if (crypto_lib::calculateSHA512(req.content["fpass"]) == user[2] && req.content["fname"] == user[1])
+            if(user.size() == 0)
+                return server.Render("templates/login.html", {{"error", "true"}});
+
+            if (crypto_lib::calculateSHA512(req.form["fpass"]) == user[2] && req.form["fname"] == user[1])
             {
                 req.session["logged"] = "true";
                 req.session["user"] = user[1];
