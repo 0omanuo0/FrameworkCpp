@@ -93,7 +93,7 @@ public:
                 return pair[1];
             }
         }
-
+        return "";
     }
 
     Session() { string(idGenerator::generateUUID()); }

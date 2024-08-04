@@ -23,6 +23,7 @@
 #include "request.h"
 #include "jinjaTemplating/templating.h"
 #include "response.h"
+#include "tools/logging.h"
 
 #ifndef SERVER_VALUES
 #define SERVER_VALUES
@@ -116,6 +117,9 @@ private:
     int __setup();
     int __loadEnv();
 
+    int __wait_socket(int socket, SSL *ssl);
+    std::string __recv(SSL *ssl, int socket);
+
     void addRouteFile(const std::string &endpoint, const std::string &extension);
     Session setNewSession(Session session);
 
@@ -130,6 +134,8 @@ public:
     int getPort(){return this->port;}
     /// @brief Function to get the host of the server
     std::string getHost(){return this->host;}
+
+    logging logger;
 
     /// @brief Constructor of the server
     HttpServer();
