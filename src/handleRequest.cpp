@@ -95,8 +95,10 @@ int HttpServer::__response_file(SSL *ssl, int socket, const std::string &path, c
     if (!file.is_open() && !file.good())
     {
         logger.warning("Error opening file", std::to_string(404));
-        Response not_found = Response(this->__not_found, 404);
-        __send_response(ssl, socket, not_found.generateResponse());
+        auto s = Session();
+        Request req(s);
+        Response notFound = this->__not_found_handler(req);
+        __send_response(ssl, socket, notFound.generateResponse());
         return -1;
     }
 
@@ -110,8 +112,10 @@ int HttpServer::__response_file(SSL *ssl, int socket, const std::string &path, c
     if (!file.read(buffer_f.data(), fileSize))
     {
         logger.warning("Error reading file", std::to_string(404));
-        Response not_found = Response(this->__not_found, 404);
-        __send_response(ssl, socket, not_found.generateResponse());
+        auto s = Session();
+        Request req(s);
+        Response notFound = this->__not_found_handler(req);
+        __send_response(ssl, socket, notFound.generateResponse());
         return -1;
     }
 
@@ -248,7 +252,10 @@ int HttpServer::__handle_request(int socket, SSL *ssl)
 
     if (!idGeneratorJWT.verifyJWT(http_headers.cookies[this->default_session_name]) && session_index != -1)
     {
-        Response response_server(this->__unauthorized, 401);
+        auto s = Session();
+        Request req(s);
+        Response response_server = __unauthorized_handler(req);
+        // Response response_server(this->__unauthorized, 401);
         logger.log(http_headers.getMethod() + " " + http_headers.getRoute(), http_headers.getQuery() + "401");
 
         __send_response(ssl, socket, response_server.generateResponse());
@@ -317,7 +324,10 @@ int HttpServer::__handle_request(int socket, SSL *ssl)
         }
     }
 
-    Response notFound(this->__not_found, 404);
+    auto s = Session();
+    Request req(s);
+    Response notFound = this->__not_found_handler(req);
+
     auto resCode = std::to_string(notFound.getResponseCode());
     logger.log(http_headers.getMethod() + " " + http_headers.getRoute(), http_headers.getQuery() + " " + resCode);
     __send_response(ssl, socket, notFound.generateResponse());

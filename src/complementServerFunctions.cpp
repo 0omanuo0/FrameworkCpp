@@ -25,15 +25,21 @@ Response HttpServer::Redirect(std::string url){
 }
 
 Response HttpServer::NotFound(){
-    return Response(this->__not_found, 404);
+    auto s = Session();
+    Request req(s);
+    return this->__not_found_handler(req);
 }
 
 Response HttpServer::Unauthorized(){
-    return Response(this->__unauthorized, 401);
+    auto s = Session();
+    Request req(s);
+    return this->__unauthorized_handler(req);
 }
 
 Response HttpServer::InternalServerError(){
-    return Response(this->__internal_server_error, 500);
+    auto s = Session();
+    Request req(s);
+    return this->__internal_server_error_handler(req);
 }
 
 bool starts_with_prefix(const std::string& url){

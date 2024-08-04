@@ -46,6 +46,8 @@ const std::map<std::string, std::string> content_type = {
 namespace types{
     typedef variant<std::string, Response> HttpResponse;
     typedef function<HttpResponse(Request&)> FunctionHandler;
+    typedef function<Response(Request&)> defaultFunctionHandler;
+
 
     struct SSLcontext
     {
@@ -88,9 +90,25 @@ private:
     std::vector<types::RouteFile> routesFile;
     std::vector<Session> sessions;
     
-    std::string __not_found = "<h1>NOT FOUND</h1>";
-    std::string __unauthorized = "<html><head><title>400 Bad Request</title></head><body><h1>400 Bad Request</h1><p>Your browser sent a request that this server could not understand.</p></body></html>";
-    std::string __internal_server_error = "<html><head><title>500 Internal Server Error</title></head><body><h1>500 Internal Server Error</h1><p>The server encountered an internal error or misconfiguration and was unable to complete your request.</p></body></html>";
+    std::string __default_not_found = "<h1>NOT FOUND</h1>";
+    types::defaultFunctionHandler __not_found_handler = [this](Request &req) -> Response {
+        return Response(__default_not_found, 404);
+    };
+    
+    std::string __default_unauthorized = "<h1>UNAUTHORIZED</h1>";
+    types::defaultFunctionHandler __unauthorized_handler = [this](Request &req) -> Response {
+        return Response(__default_unauthorized, 401);
+    };
+
+    std::string __default_internal_server_error = "<html><head><title>500 Internal Server Error</title></head><body><h1>500 Internal Server Error</h1><p>The server encountered an internal error or misconfiguration and was unable to complete your request.</p></body></html>";
+    types::defaultFunctionHandler __internal_server_error_handler = [this](Request &req) -> Response {
+        return Response(__default_internal_server_error, 500);
+    };
+
+    std::string __default_bad_request = "<html><head><title>400 Bad Request</title></head><body><h1>400 Bad Request</h1><p>Your browser sent a request that this server could not understand.</p></body></html>";
+    types::defaultFunctionHandler __redirect_handler = [this](Request &req) -> Response {
+        return Response(__default_bad_request, 400);
+    };
 
     Templating *template_render;
     int MAX_CONNECTIONS = 10;
@@ -174,10 +192,20 @@ public:
     /// @return The rendered file as std::string to send to the client
     std::string Render(const std::string &route, const std::string& data );
 
+    /// @brief Function to render a jinja or html file
+    /// @param content Content to render
+    /// @param data Content to pass to the file
+    /// @return The rendered file as std::string to send to the client
+    std::string RenderString(const std::string &content, nlohmann::json data = nlohmann::json());
+
     Response Redirect(std::string url);
     Response NotFound();
     Response Unauthorized();
     Response InternalServerError();
+
+    void setNotFound(const types::defaultFunctionHandler &not_found);
+    void setUnauthorized(const types::defaultFunctionHandler &unauthorized);
+    void setInternalServerError(const types::defaultFunctionHandler &internal_server_error);
 };
 /// @brief Function to find the cookie
 std::string findCookie(HttpServer &server);

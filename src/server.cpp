@@ -61,6 +61,11 @@ string HttpServer::Render(const string &route, const string &data)
     return template_render->Render(route, data);
 };
 
+string HttpServer::RenderString(const string &route, nlohmann::json data)
+{
+    return template_render->RenderString(route, data);
+};
+
 void HttpServer::__startListenerSSL()
 {
     vector<thread> threads;
@@ -196,16 +201,21 @@ int HttpServer::__setup()
             else throw std::runtime_error("Error: default_session_name must be a string");
         }
         else if(data.first == "not_found"){
-            if(std::holds_alternative<std::string>(data.second)) this->__not_found = std::get<std::string>(data.second);
+            if(std::holds_alternative<std::string>(data.second)) this->__default_not_found = std::get<std::string>(data.second);
             else throw std::runtime_error("Error: not_found must be a string");
         }
         else if(data.first == "internal_server_error"){
-            if(std::holds_alternative<std::string>(data.second)) this->__internal_server_error = std::get<std::string>(data.second);
+            if(std::holds_alternative<std::string>(data.second)) this->__default_internal_server_error = std::get<std::string>(data.second);
             else throw std::runtime_error("Error: internal_server_error must be a string");
         }
         else if(data.first == "unauthorized"){
-            if(std::holds_alternative<std::string>(data.second)) this->__unauthorized = std::get<std::string>(data.second);
+            if(std::holds_alternative<std::string>(data.second)) this->__default_unauthorized = std::get<std::string>(data.second);
             else throw std::runtime_error("Error: unauthorized must be a string");
+        }
+        else if(data.first == "bad_request")
+        {
+            if(std::holds_alternative<std::string>(data.second)) this->__default_bad_request = std::get<std::string>(data.second);
+            else throw std::runtime_error("Error: bad_request must be a string");
         }
     }
 
@@ -294,4 +304,20 @@ void HttpServer::urlfor(const string &endpoint)
     if (string::npos != index)
         extension = endpoint.substr(index + 1);
     addRouteFile(endpoint, extension);
+}
+
+
+void HttpServer::setNotFound(const types::defaultFunctionHandler &handler)
+{
+    this->__not_found_handler = handler;
+}
+
+void HttpServer::setUnauthorized(const types::defaultFunctionHandler &handler)
+{
+    this->__unauthorized_handler = handler;
+}
+
+void HttpServer::setInternalServerError(const types::defaultFunctionHandler &handler)
+{
+    this->__internal_server_error_handler = handler;
 }
