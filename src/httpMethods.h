@@ -8,7 +8,6 @@
 #include <regex>
 #include <variant>
 
-
 #include <iostream>
 #include "tools/url_encoding.h"
 #include "jinjaTemplating/json.hpp"
@@ -32,6 +31,14 @@ enum headerType
     LIST,
     DICT,
     PAIR
+};
+
+enum class contentType
+{
+    STRING,
+    DICT,
+    BYTE_ARRAY,
+    JSON
 };
 
 // acepted request headers (just the standard ones)
@@ -136,6 +143,7 @@ class header
 
 private:
     headerValue value;
+    headerType header_type;
 
 public:
     bool isString() { return std::holds_alternative<std::string>(value); }
@@ -149,10 +157,15 @@ public:
     std::pair<std::string, std::string> getPair() { return std::get<std::pair<std::string, std::string>>(value); }
 
     header() = default;
-    header(std::string value) : value(value) {}
-    header(std::vector<std::string> value) : value(value) {}
-    header(std::map<std::string, std::string> value) : value(value) {}
-    header(std::pair<std::string, std::string> value) : value(value) {}
+    header(std::string value) : value(value), header_type(headerType::STRING) {}
+    header(std::vector<std::string> value) : value(value), header_type(headerType::LIST) {}
+    header(std::map<std::string, std::string> value) : value(value), header_type(headerType::DICT) {}
+    header(std::pair<std::string, std::string> value) : value(value), header_type(headerType::PAIR) {}
+
+    headerType getType()
+    {
+        return header_type;
+    }
 
     template <typename T>
     T get()
@@ -172,9 +185,10 @@ class Content
 
 private:
     contentValue contentData;
+    contentType content_type;
 
 public:
-    Content(): contentData(std::string()) {}
+    Content() : contentData(std::string()) {}
     Content(const std::string &stringContent, const std::string &encodingType = "text/plain");
 
     bool isString() { return std::holds_alternative<std::string>(contentData); }
@@ -207,9 +221,41 @@ public:
         return {};
     }
 
+    contentType getType()
+    {
+        return content_type;
+    }
+
     // Get the content as a specific type
     template <typename T>
-    T get() { return std::get<T>(contentData); }
+    T get()
+    {
+        if (std::holds_alternative<T>(contentData))
+            return std::get<T>(contentData);
+        else if (std::is_same<T, std::string>::value && isDict())
+        {
+            std::string result = "{";
+            for (auto &pair : std::get<std::map<std::string, std::string>>(contentData))
+            {
+                result += "\"" + pair.first + "\": \"" + pair.second + "\", ";
+            }
+            result.pop_back();
+            result.pop_back();
+            result += "}";
+            return result;
+        }
+        else if (std::is_same<T, std::string>::value && isByteArray())
+        {
+            std::string result;
+            for (auto &byte : std::get<std::vector<char>>(contentData))
+            {
+                result += byte;
+            }
+            return result;
+        }
+        else if (std::is_same<T, std::string>::value && isJson())
+            return std::get<nlohmann::json>(contentData).dump();
+    }
 };
 
 struct HttpRequest
@@ -235,7 +281,7 @@ private:
 public:
     httpHeaders() {}
 
-    header operator[] (const std::string &key);
+    header operator[](const std::string &key);
 
     HttpRequest getRequest()
     {

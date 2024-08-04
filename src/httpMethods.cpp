@@ -150,19 +150,23 @@ Content::Content(const std::string& stringContent, const std::string& encodingTy
             input = matches.suffix();
         }
         this->contentData = temp_contentData;
+        this->content_type = contentType::DICT;
     }
     else if(encodingType == "application/json")
     {
         this->contentData = nlohmann::json::parse(stringContent);
+        this->content_type = contentType::JSON;
     }
     else if(encodingType == "application/octet-stream")
     {
         std::vector<char> byteContent(stringContent.begin(), stringContent.end());
         this->contentData = byteContent;
+        this->content_type = contentType::BYTE_ARRAY;
     }
     else
     {
         this->contentData = stringContent;
+        this->content_type = contentType::STRING;
     }
 }
 
