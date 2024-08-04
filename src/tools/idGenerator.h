@@ -90,7 +90,6 @@ class idGenerator
     public:
         void setPrivateKey(const std::string &private_key) { this->private_key = private_key; }
         idGenerator(const std::string &private_key) : private_key(private_key) {}
-        static int generateID() { return atoi(generateIDstr().c_str()); }
         static std::string generateIDstr()
         {
             char id[32];
