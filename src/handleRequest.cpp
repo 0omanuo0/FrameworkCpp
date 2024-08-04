@@ -1,23 +1,7 @@
 #include "server.h"
 // include time for the current time
 #include <ctime>
-
 #include <unordered_map>
-
-std::string getCurrentTimestamp() {
-    // Obtiene el tiempo actual desde el epoch
-    auto now = std::chrono::system_clock::now();
-    // Convierte el tiempo a time_t para manipularlo como una estructura de tiempo tradicional
-    std::time_t now_time = std::chrono::system_clock::to_time_t(now);
-    // Convierte el time_t a una estructura tm
-    std::tm* now_tm = std::localtime(&now_time);
-
-    // Usa un stringstream para dar formato al tiempo
-    std::ostringstream oss;
-    oss << std::put_time(now_tm, "%H:%M:%S");
-    return oss.str();
-}
-
 
 bool __match_path_with_route(const std::string &path, const std::string &routePath, std::unordered_map<std::string, std::string> &url_params)
 {
@@ -49,7 +33,7 @@ bool __route_contains_params(const std::string &routePath)
     return std::regex_search(routePath, paramRegex);
 }
 
-std::string __recv(SSL *ssl, int socket)
+std::string HttpServer::__recv(SSL *ssl, int socket)
 {
     char buffer[BUFFER_SIZE];
     std::string data;
@@ -66,7 +50,7 @@ std::string __recv(SSL *ssl, int socket)
         else
         {
             // Indica un error, ya que ni SSL ni socket están disponibles
-            std::cerr << "Ni SSL ni socket disponibles" << std::endl;
+            logger.warning("Neither SSL nor socket available");
             return std::string();
         }
 
@@ -88,7 +72,7 @@ std::string __recv(SSL *ssl, int socket)
                 break;
             else
             {
-                std::cerr << "Error al leer la petición" << std::endl;
+                logger.warning("Error reading the request", strerror(errno));
                 return std::string();
             }
         }
@@ -110,9 +94,8 @@ int HttpServer::__response_file(SSL *ssl, int socket, const std::string &path, c
     std::ifstream file(path, std::ios::binary);
     if (!file.is_open() && !file.good())
     {
-        std::cerr << "Error al abrir el archivo: " << path << std::endl;
+        logger.warning("Error opening file", std::to_string(404));
         Response not_found = Response(this->__not_found, 404);
-        std::cout << not_found.getResponseCode() << std::endl;
         __send_response(ssl, socket, not_found.generateResponse());
         return -1;
     }
@@ -126,9 +109,8 @@ int HttpServer::__response_file(SSL *ssl, int socket, const std::string &path, c
     std::vector<char> buffer_f(fileSize);
     if (!file.read(buffer_f.data(), fileSize))
     {
-        std::cerr << "Error al leer el archivo: " << path << std::endl;
+        logger.warning("Error reading file", std::to_string(404));
         Response not_found = Response(this->__not_found, 404);
-        std::cout << not_found.getResponseCode() << std::endl;
         __send_response(ssl, socket, not_found.generateResponse());
         return -1;
     }
@@ -141,7 +123,8 @@ int HttpServer::__response_file(SSL *ssl, int socket, const std::string &path, c
 
     data_to_send.push_back(response_serv.generateResponse());
     data_to_send.push_back(std::string(buffer_f.begin(), buffer_f.end()));
-    std::cout << response_serv.getResponseCode() << std::endl;
+    auto resCode = std::to_string(response_serv.getResponseCode());
+    logger.log("GET " + path, resCode);
     __send_response(ssl, socket, data_to_send);
     return 0;
 }
@@ -153,13 +136,13 @@ int HttpServer::__send_response(SSL *ssl, int socket, const std::vector<std::str
         // Enviar el encabezado y el contenido del archivo al cliente
         if (SSL_write(ssl, response[0].c_str(), response[0].size()) < 0)
         {
-            std::cerr << "Error al enviar el encabezado HTTP" << std::endl;
+            logger.warning("Error while sending the HTTP header", strerror(errno));
             return -1;
         }
 
         if (SSL_write(ssl, response[1].c_str(), response[1].size()) < 0)
         {
-            std::cerr << "Error al enviar el contenido del archivo" << std::endl;
+            logger.warning("Error while sending the file content", strerror(errno));
             return -1;
         }
     }
@@ -168,13 +151,13 @@ int HttpServer::__send_response(SSL *ssl, int socket, const std::vector<std::str
         // Enviar el encabezado y el contenido del archivo al cliente
         if (send(socket, response[0].c_str(), response[0].size(), 0) < 0)
         {
-            std::cerr << "Error al enviar el encabezado HTTP" << std::endl;
+            logger.warning("Error while sending the HTTP header", strerror(errno));
             return -1;
         }
 
         if (send(socket, response[1].c_str(), response[1].size(), 0) < 0)
         {
-            std::cerr << "Error al enviar el contenido del archivo" << std::endl;
+            logger.warning("Error while sending the file content", strerror(errno));
             return -1;
         }
     }
@@ -189,7 +172,7 @@ int HttpServer::__send_response(SSL *ssl, int socket, const std::string &respons
         const char *httpResponse = response.c_str();
         if (SSL_write(ssl, httpResponse, strlen(httpResponse)) < 0)
         {
-            std::cerr << "Error al enviar la respuesta HTTPS" << std::endl;
+            logger.warning("Error sendind the HTTPS response", strerror(errno));
             return -1;
         }
         return 0;
@@ -199,14 +182,15 @@ int HttpServer::__send_response(SSL *ssl, int socket, const std::string &respons
         const char *httpResponse = response.c_str();
         if (send(socket, httpResponse, strlen(httpResponse), 0) < 0)
         {
-            std::cerr << "Error al enviar la respuesta HTTP" << std::endl;
+            logger.warning("Error sendind the HTTP response", strerror(errno));
+
             return -1;
         }
         return 0;
     }
 }
 
-int __wait_socket(int socket, SSL *ssl)
+int HttpServer::__wait_socket(int socket, SSL *ssl)
 {
 
     if (ssl != NULL)
@@ -223,7 +207,8 @@ int __wait_socket(int socket, SSL *ssl)
         }
         catch (std::exception &e)
         {
-            cout << e.what() << "Comunication already closed" << endl;
+            logger.warning("Comunication already closed", e.what());
+            return -1;
         }
     }
 
@@ -237,7 +222,7 @@ int __wait_socket(int socket, SSL *ssl)
         }
         catch (const std::exception &e)
         {
-            std::cerr << e.what() << "Comunication already closed" << '\n';
+            logger.warning("Comunication already closed", e.what());
             return -1;
         }
     }
@@ -255,8 +240,8 @@ int HttpServer::__handle_request(int socket, SSL *ssl)
 
     Session session = __get_session(session_index);
 
+    /////////////////////////////////////////////
     // print the request method, route and query as [time] METHOD route query
-    std::cout << "[" << getCurrentTimestamp() << "] " << http_headers.getMethod() << " " << http_headers.getRoute() << " " << http_headers.getQuery();
 
     // Buscar la ruta correspondiente en el std::vector de rutas
     int indexRoute = -1;
@@ -264,8 +249,8 @@ int HttpServer::__handle_request(int socket, SSL *ssl)
     if (!idGeneratorJWT.verifyJWT(http_headers.cookies[this->default_session_name]) && session_index != -1)
     {
         Response response_server(this->__unauthorized, 401);
-        std::cout << response_server.getResponseCode() << std::endl;
-        
+        logger.log(http_headers.getMethod() + " " + http_headers.getRoute(), http_headers.getQuery() + "401");
+
         __send_response(ssl, socket, response_server.generateResponse());
         __wait_socket(socket, ssl);
         return 0;
@@ -294,8 +279,9 @@ int HttpServer::__handle_request(int socket, SSL *ssl)
     {
         Request arg = Request(url_params, socket, ssl, http_headers, session, http_headers.getRequest());
         auto responseHandler = routes[indexRoute].handler(arg);
-        Response response = std::holds_alternative<string>(responseHandler) 
-                                ? Response(std::get<string>(responseHandler)) : std::get<Response>(responseHandler);
+        Response response = std::holds_alternative<string>(responseHandler)
+                                ? Response(std::get<string>(responseHandler))
+                                : std::get<Response>(responseHandler);
 
         if (session.deleted)
             this->sessions.erase(this->sessions.begin() + session_index);
@@ -306,7 +292,8 @@ int HttpServer::__handle_request(int socket, SSL *ssl)
 
         response.addSessionCookie(this->default_session_name, this->idGeneratorJWT.generateJWT(session.toString()));
 
-        std::cout << response.getResponseCode() << std::endl;
+        auto resCode = std::to_string(response.getResponseCode());
+        logger.log(http_headers.getMethod() + " " + http_headers.getRoute() + " " + http_headers.getQuery(), resCode);
         __send_response(ssl, socket, response.generateResponse());
 
         __wait_socket(socket, ssl);
@@ -324,7 +311,6 @@ int HttpServer::__handle_request(int socket, SSL *ssl)
             std::string localPath = http_headers.getRoute();
             localPath.replace(pos, route_file.path.length(), route_file.path);
 
-            
             __response_file(ssl, socket, localPath.substr(1), route_file.type);
             __wait_socket(socket, ssl);
             return 0;
@@ -332,7 +318,8 @@ int HttpServer::__handle_request(int socket, SSL *ssl)
     }
 
     Response notFound(this->__not_found, 404);
-    std::cout << notFound.getResponseCode() << std::endl;
+    auto resCode = std::to_string(notFound.getResponseCode());
+    logger.log(http_headers.getMethod() + " " + http_headers.getRoute(), http_headers.getQuery() + " " + resCode);
     __send_response(ssl, socket, notFound.generateResponse());
 
     __wait_socket(socket, ssl);

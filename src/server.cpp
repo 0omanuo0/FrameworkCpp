@@ -152,10 +152,10 @@ int HttpServer::__loadEnv()
     if (!filesystem::exists(envPath))
     {
         // display that .env not exists so is using default values
-        std::cout << "[Warning]: .env file not found, using default values" << std::endl;
+        logger.warning("The .env file does not exist, using default values");
         return 1;
     }
-    std::cout << "[Log]: Loading .env file" << std::endl;
+    logger.log("Loading environment variables from .env file");
 
     std::ifstream file(envPath);
     if (!file.is_open())return 2;
@@ -244,14 +244,14 @@ int HttpServer::__setup()
     // Enlazar el socket a la dirección y el puerto
     if (bind(serverSocket, (struct sockaddr *)&serverAddress, sizeof(serverAddress)) != 0)
     {
-        cerr << "Error al enlazar el socket" << endl;
+        logger.error("Error while binding the socket");
         return 1;
     }
 
     // Escuchar las conexiones entrantes
     if (listen(serverSocket, MAX_CONNECTIONS) < 0)
     {
-        cerr << "Error al escuchar las conexiones" << endl;
+        logger.error("Error while listening for incoming connections");
         return 1;
     }
     if(HTTPS)
