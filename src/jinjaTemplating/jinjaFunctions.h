@@ -12,7 +12,9 @@ using Json = nlohmann::json;
 namespace JinjaFunctions {
     inline Json length(const Json &data)
     {
-        return data.size();
+        if(data.is_string()) return data.get<std::string>().size();
+        if(data.is_object() || data.is_array()) return data.size();
+        return 0;
     }
     inline Json sum(const Json &data)
     {

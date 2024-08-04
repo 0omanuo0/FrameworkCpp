@@ -154,7 +154,7 @@ inline void __preprocessExpression(std::string &expression, const nlohmann::json
         std::sregex_token_iterator end;
         for (; iter != end; ++iter)
         {
-            filters.push_back(iter->str());
+            filters.push_back(trimm(iter->str()));
         }
     }
 
@@ -175,54 +175,57 @@ inline void __preprocessExpression(std::string &expression, const nlohmann::json
         }
     }
 
-    expression = result.dump();
+    if (result.is_string()) expression = result.get<std::string>();
+    // if is number convert to string but if is integer convert to int
+    else if (result.is_number_integer() || result.is_number_unsigned() || result.is_number_float())
+    {
+        if (result.is_number_integer())
+            expression = std::to_string(result.get<long>());
+        else
+            expression = std::to_string(result.get<double>());
+    }
+    else expression = result.dump();
 }
 
 inline std::pair<long, long> process_range(const std::string &iterable, const nlohmann::json &data)
 {
-    const std::regex range_pattern(R"(range\(\s*([^{}])(?:\s*,\s*([^{}]+))?\s*\))");
+    // Define el patrón regex para coincidir con la expresión 'range(n, m)'
+    const std::regex range_pattern(R"(range\(\s*([^{,}]+)(?:\s*,\s*([^{,}]+))?\s*\))");
     std::smatch match;
-    long n = -1;
-    long m = -1;
+    long n = -1, m = -1;
 
+    // Si el patrón regex encuentra una coincidencia en la cadena 'iterable'
     if (std::regex_search(iterable, match, range_pattern))
     {
-        if (match[2].str() != "")
+        // Define una lambda para analizar y evaluar cada valor encontrado
+        auto parse_value = [&data](const std::string &str) -> long
         {
-
             char *p;
-            n = strtol(match[1].str().c_str(), &p, 10);
-            if (*p)
+            long val = strtol(str.c_str(), &p, 10); // Intenta convertir la cadena a número
+            if (*p)                                 // Si no es un número puro
             {
-                if (__evaluateExpression(match[1].str(), data) != std::numeric_limits<double>::quiet_NaN())
-                    n = (long)__evaluateExpression(match[1].str(), data);
-                else if (is_number(data, match[1].str()))
-                    n = data[match[1].str()].get<long>();
-                else
-                {
-                    std::cerr << "Error: the variable " << match[1].str() << " or " << match[2].str() << " is not a number" << std::endl;
-                    return std::make_pair(0, 0);
-                }
+                double eval_result = __evaluateExpression(str, data); // Intenta evaluar la expresión
+                if (eval_result != std::numeric_limits<double>::quiet_NaN())
+                    return static_cast<long>(eval_result);
+                if (is_number(data, str)) // Verifica si el valor es un número en 'data'
+                    return data[str].get<long>();
+                std::cerr << "Error: the variable " << str << " is not a number" << std::endl;
+                return -1; // Retorna 0 si no se puede evaluar como número
             }
-        }
+            return val; // Retorna el valor convertido
+        };
 
-        char *p;
-        m = strtol(match[2].str().c_str(), &p, 10);
-        if (*p)
+        n = parse_value(match[1].str());     // Analiza el primer valor
+        if (match[2].matched)                // Si hay un segundo valor
+            m = parse_value(match[2].str()); // Analiza el segundo valor
+        else
         {
-            if (__evaluateExpression(match[2].str(), data) != std::numeric_limits<double>::quiet_NaN())
-                m = (long)__evaluateExpression(match[2].str(), data);
-            else if (is_number(data, match[2].str()))
-                m = data[match[2].str()].get<long>();
-            else
-            {
-                std::cerr << "Error: the variable " << match[1].str() << " or " << match[2].str() << " is not a number" << std::endl;
-                return std::make_pair(0, 0);
-            }
+            m = n; // Si no hay segundo valor, asigna el valor de 'n'
+            n = 0;
         }
     }
 
-    return std::make_pair(n, m);
+    return std::make_pair(n, m); // Retorna el par de valores (n, m)
 }
 
 inline std::unordered_map<std::string, nlohmann::json> convertToMap(const nlohmann::json &data)

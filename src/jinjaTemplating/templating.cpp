@@ -1,5 +1,13 @@
 #include "templating.h"
 
+std::string Templating::RenderString(const std::string &content, const nlohmann::json &data)
+{
+    std::istringstream stream(content);
+    Block rootBlock = this->BlockParser(stream);
+    nlohmann::json dataCopy = data;
+    return this->__Render(rootBlock, dataCopy);
+}
+
 std::string Templating::Render(const std::string &file, const std::map<std::string, std::string> &data)
 {
     nlohmann::json jsonData = data;
@@ -187,6 +195,7 @@ std::string Templating::__renderIfBlock(Block &ifBlock, nlohmann::json &data)
                 throw Templating_RenderError("Invalid subblock type", ifBlock);
         }
     }
+    return "";
 }
 
 std::string Templating::__renderForBlock(Block &forBlock, nlohmann::json &data)
@@ -383,8 +392,9 @@ std::string Templating::__renderExpressions(std::string expression, nlohmann::js
                     url = urlData.get<std::string>();
                 else
                     url = urlData.dump();
-
-                this->server->urlfor(url);
+                #ifdef SERVER_H
+                if(this->server != nullptr) this->server->urlfor(url);
+                #endif
                 resultString += url;
             }
             else if (std::regex_search(value, match, urlfor_pattern))
@@ -400,18 +410,22 @@ std::string Templating::__renderExpressions(std::string expression, nlohmann::js
                 else
                     url = urlData.dump();
 
-                this->server->urlfor(url);
+                #ifdef SERVER_H
+                if(this->server != nullptr) this->server->urlfor(url);
+                #endif
                 resultString += url;
             }
             else
             {
-                auto result = accessJsonValue(data, value);
-                if(result == nullptr)
-                    resultString += value;
-                else if (result.is_string())
-                    resultString += result.get<std::string>();
-                else
-                    resultString += result.dump();
+                auto result = trimm(value);
+                __preprocessExpression(result, data);
+                resultString += result;
+                // if(result == nullptr)
+                //     resultString += value;
+                // else if (result.is_string())
+                //     resultString += result.get<std::string>();
+                // else
+                //     resultString += result.dump();
             }
             return resultString + right;
         }

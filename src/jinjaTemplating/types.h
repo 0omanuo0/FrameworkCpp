@@ -8,6 +8,7 @@
 #include <sstream>
 #include <fstream>
 #include <map>
+#include <filesystem>
 
 enum class BlockType
 {

@@ -63,6 +63,8 @@ public:
     std::string Render(const std::string &file, const std::map<std::string, std::string> &data);
     std::string Render(const std::string &file);
     std::string Render(const std::string &file, const std::string &data);
+
+    std::string RenderString(const std::string &content, const nlohmann::json &data);
     
 };
 
