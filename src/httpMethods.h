@@ -235,6 +235,8 @@ private:
 public:
     httpHeaders() {}
 
+    header operator[] (const std::string &key);
+
     HttpRequest getRequest()
     {
         return {

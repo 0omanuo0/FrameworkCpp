@@ -166,3 +166,13 @@ Content::Content(const std::string& stringContent, const std::string& encodingTy
     }
 }
 
+header httpHeaders::operator[](const std::string &key)
+{
+    if(key == "Method" || key == "method")
+        return header(this->method);
+    if(key == "Route" || key == "route")
+        return header(this->route);
+    if(key == "Query" || key == "query")
+        return header(this->query);
+    return this->Headers[key];
+}
