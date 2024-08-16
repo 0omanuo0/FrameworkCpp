@@ -63,8 +63,7 @@ std::string Templating::Render(const std::string &file, const nlohmann::json &da
     }
     catch (const std::exception &e)
     {
-        std::cerr << e.what() << '\n';
-
+        this->server->logger.warning(e.what());
         return "";
     }
 }
@@ -224,9 +223,18 @@ std::string Templating::__renderForBlock(Block &forBlock, nlohmann::json &data)
         if(n!=-1 && m!=-1) throw Templating_RenderError("Invalid range: " + iterable, forBlock);
 
     // Handle JSON array or object-based loops
-    auto it = accessJsonValue(data, iterable);
+    // get the value and the filters
+    FilterData filterData = getFilters(expression);
+    expression = filterData.value;
+    auto filters = filterData.filters;
+
+    // evaluate the value with the filters
+    nlohmann::json it = accessJsonValue(data, expression);
     if (it == nullptr) // If the iterable is not found in the data
         throw Templating_RenderError("Invalid iterable: " + iterable + " is not an array or an object", forBlock);
+
+    result = applyFilters(expression, filters, data);
+    
 
     if (it.is_array())
     {
