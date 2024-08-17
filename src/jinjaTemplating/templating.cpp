@@ -1,4 +1,5 @@
 #include "templating.h"
+#include "errors.h"
 
 std::string Templating::RenderString(const std::string &content, const nlohmann::json &data)
 {
@@ -28,7 +29,7 @@ std::string Templating::Render(const std::string &file)
 
 std::string Templating::Render(const std::string &file, const nlohmann::json &data)
 {
-    
+
     nlohmann::json dataCopy = data;
     Block root;
 
@@ -61,9 +62,23 @@ std::string Templating::Render(const std::string &file, const nlohmann::json &da
 
         return this->__Render(root, dataCopy);
     }
+    catch (const Templating_ParserError &e)
+    {
+        this->server->logger.error(e.what());
+        return "";
+    }
+    catch (const Templating_RenderError &e)
+    {
+        this->server->logger.error(e.what());
+        auto data_ = e.getData();
+        if(data_.is_null())
+            data_ = data;
+
+        return render_error(e.what(), e.getStackTrace(), e.getFile(), e.getLine(), data_, root);
+    }
     catch (const std::exception &e)
     {
-        this->server->logger.warning(e.what());
+        this->server->logger.error(e.what());
         return "";
     }
 }
@@ -191,7 +206,7 @@ std::string Templating::__renderIfBlock(Block &ifBlock, nlohmann::json &data)
                 return this->__Render(newBlock, data);
             }
             else
-                throw Templating_RenderError("Invalid subblock type", ifBlock);
+                throw Templating_RenderError("Invalid subblock type", ifBlock, {}, __builtin_FILE(), __builtin_LINE());
         }
     }
     return "";
@@ -219,22 +234,21 @@ std::string Templating::__renderForBlock(Block &forBlock, nlohmann::json &data)
 
         return result;
     }
-    else
-        if(n!=-1 && m!=-1) throw Templating_RenderError("Invalid range: " + iterable, forBlock);
+    else if (n != -1 && m != -1)
+        throw Templating_RenderError("Invalid range: " + iterable, forBlock, __builtin_FILE(), __builtin_LINE());
 
     // Handle JSON array or object-based loops
     // get the value and the filters
-    FilterData filterData = getFilters(expression);
-    expression = filterData.value;
+    FilterData filterData = getFilters(iterable);
+    auto iterable_parsed = filterData.value;
     auto filters = filterData.filters;
 
     // evaluate the value with the filters
-    nlohmann::json it = accessJsonValue(data, expression);
+    nlohmann::json it = accessJsonValue(data, iterable_parsed);
     if (it == nullptr) // If the iterable is not found in the data
-        throw Templating_RenderError("Invalid iterable: " + iterable + " is not an array or an object", forBlock);
+        throw Templating_RenderError("Invalid iterable: " + iterable + " is not an array or an object", forBlock, __FILE__, __LINE__, data);
 
-    result = applyFilters(expression, filters, data);
-    
+    it = applyFilters(filters, it);
 
     if (it.is_array())
     {
@@ -251,7 +265,7 @@ std::string Templating::__renderForBlock(Block &forBlock, nlohmann::json &data)
         // Iterate over JSON object
         auto values = convertToMap(it);
         if (values.empty())
-            throw Templating_RenderError("Invalid iterable: " + iterable + " is not an object", forBlock);
+            throw Templating_RenderError("Invalid iterable: " + iterable + " is not an object", forBlock, __builtin_FILE(), __builtin_LINE(), data);
         for (auto &item : values)
         {
             auto allData = data;
@@ -271,7 +285,7 @@ std::string Templating::__renderForBlock(Block &forBlock, nlohmann::json &data)
         }
     }
     else
-        throw Templating_RenderError("Invalid iterable: " + iterable + " is not an array or an object", forBlock);
+        throw Templating_RenderError("Invalid iterable: " + iterable + " is not an array or an object", forBlock, __FILE__, __LINE__);
 
     return result;
 }
@@ -354,8 +368,10 @@ Block Templating::BlockParser(std::istream &stream, Block parent)
         }
         else
         {
-            if (!block.subBlocks.empty()) block.subBlocks.back().content.push_back(line);
-            else block.content.push_back(line);
+            if (!block.subBlocks.empty())
+                block.subBlocks.back().content.push_back(line);
+            else
+                block.content.push_back(line);
         }
     }
 
@@ -378,7 +394,7 @@ std::string Templating::__renderExpressions(std::string expression, nlohmann::js
         std::string right = expression.substr(matchPosition + match[0].length());
 
         // Check if there are more expressions in the right side
-        if(!right.empty())
+        if (!right.empty())
             right = this->__renderExpressions(right, data);
         resultString = left;
 
@@ -396,13 +412,14 @@ std::string Templating::__renderExpressions(std::string expression, nlohmann::js
 
                 if (urlData == nullptr)
                     url = match[2].str();
-                else if(urlData.is_string())
+                else if (urlData.is_string())
                     url = urlData.get<std::string>();
                 else
                     url = urlData.dump();
-                #ifdef SERVER_H
-                if(this->server != nullptr) this->server->urlfor(url);
-                #endif
+#ifdef SERVER_H
+                if (this->server != nullptr)
+                    this->server->urlfor(url);
+#endif
                 resultString += url;
             }
             else if (std::regex_search(value, match, urlfor_pattern))
@@ -413,14 +430,15 @@ std::string Templating::__renderExpressions(std::string expression, nlohmann::js
 
                 if (urlData == nullptr)
                     url = match[1].str();
-                else if(urlData.is_string())
+                else if (urlData.is_string())
                     url = urlData.get<std::string>();
                 else
                     url = urlData.dump();
 
-                #ifdef SERVER_H
-                if(this->server != nullptr) this->server->urlfor(url);
-                #endif
+#ifdef SERVER_H
+                if (this->server != nullptr)
+                    this->server->urlfor(url);
+#endif
                 resultString += url;
             }
             else
