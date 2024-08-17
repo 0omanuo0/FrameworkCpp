@@ -2,6 +2,8 @@
 
 # Source files
 file(GLOB SRCS *.cpp jinjaTemplating/*.cpp tools/*.cpp)
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--export-dynamic")
+
 
 # Crear una biblioteca estática o compartida
 add_library(httpserver_lib ${SRCS})
@@ -13,7 +15,7 @@ include_directories(${SRC_DIR} ${SRC_DIR}/jinjaTemplating ${SRC_DIR}/tools)
 add_executable(httpserver ${CMAKE_SOURCE_DIR}/app.cpp)
 
 # Linkear el ejecutable principal con la biblioteca
-target_link_libraries(httpserver httpserver_lib ssl crypto sqlite3 curl stdc++fs)
+target_link_libraries(httpserver httpserver_lib ssl crypto sqlite3 curl stdc++fs dl)
 
 # Set the output directory for the executable
 set_target_properties(httpserver PROPERTIES
@@ -23,8 +25,9 @@ set_target_properties(httpserver PROPERTIES
 )
 
 # Compiler flags
-set(DEBUG_CXXFLAGS "-Wall -g -Og -fdiagnostics-color=always")
+set(DEBUG_CXXFLAGS "-Wall -g -Og -O0 -DDEBUG -rdynamic -fdiagnostics-color=always")
 set(RELEASE_CXXFLAGS "-O3")
+
 
 # Debug configuration
 set_target_properties(httpserver PROPERTIES COMPILE_FLAGS_DEBUG ${DEBUG_CXXFLAGS})
