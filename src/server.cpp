@@ -32,7 +32,7 @@ HttpServer::HttpServer(int port_server, char *hostname)
     template_render = new Templating();
     template_render->server = this;
 }
-HttpServer::HttpServer(int port_server, const string SSLcontext_server[], char *hostname )
+HttpServer::HttpServer(int port_server, const string SSLcontext_server[], char *hostname)
     : port(port_server)
 {
     host = hostname;
@@ -106,7 +106,6 @@ void HttpServer::__startListenerSSL()
     }
 }
 
-
 void HttpServer::__startListener()
 {
     vector<thread> threads;
@@ -135,15 +134,22 @@ void HttpServer::__startListener()
     }
 }
 
-
 void HttpServer::startListener()
 {
-    if (this->__setup() != 0) throw std::runtime_error("Error: setup failed");
-
-    if (HTTPS)
-        this->__startListenerSSL();
-    else
-        this->__startListener();
+    try
+    {
+        if (this->__setup() != 0)
+            throw std::runtime_error("Error: setup failed");
+        if (HTTPS)
+            this->__startListenerSSL();
+        else
+            this->__startListener();
+    }
+    catch (const std::exception &e)
+    {
+        close(this->serverSocket);
+        this->logger.error(e.what());
+    }
 }
 
 void HttpServer::setEnv(const std::string &envPath)
@@ -163,19 +169,22 @@ int HttpServer::__loadEnv()
     logger.log("Loading environment variables from .env file");
 
     std::ifstream file(envPath);
-    if (!file.is_open())return 2;
+    if (!file.is_open())
+        return 2;
 
     std::string line;
     while (std::getline(file, line))
     {
         std::istringstream is_line(line);
         std::string key;
-        if(line[0] == '#') continue;
+        if (line[0] == '#')
+            continue;
 
         if (std::getline(is_line, key, '='))
         {
             std::string value;
-            if (std::getline(is_line, value)) this->data_[key] = value;
+            if (std::getline(is_line, value))
+                this->data_[key] = value;
         }
     }
     return 0;
@@ -183,42 +192,63 @@ int HttpServer::__loadEnv()
 
 int HttpServer::__setup()
 {
-    if (this->__loadEnv() > 1) throw std::runtime_error("Error: loadEnv failed");
+    if (this->__loadEnv() > 1)
+        throw std::runtime_error("Error: loadEnv failed");
     // Configurar el servidor
     for (auto &data : data_)
     {
-        if(data.first == "max_connections"){
-            if(std::holds_alternative<int>(data.second)) this->MAX_CONNECTIONS = std::get<int>(data.second);
-            else if(std::holds_alternative<std::string>(data.second)) this->MAX_CONNECTIONS = std::stoi(std::get<std::string>(data.second));
-            else throw std::runtime_error("Error: max_connections must be an integer");
-        }
-        else if(data.first == "secret_key"){
-            if(std::holds_alternative<std::string>(data.second)) this->idGeneratorJWT = idGenerator(std::get<std::string>(data.second));
-            else throw std::runtime_error("Error: secret_key must be a string");
-        }
-        else if(data.first == "default_session_name"){
-            if(std::holds_alternative<std::string>(data.second)) this->default_session_name = std::get<std::string>(data.second);
-            else throw std::runtime_error("Error: default_session_name must be a string");
-        }
-        else if(data.first == "not_found"){
-            if(std::holds_alternative<std::string>(data.second)) this->__default_not_found = std::get<std::string>(data.second);
-            else throw std::runtime_error("Error: not_found must be a string");
-        }
-        else if(data.first == "internal_server_error"){
-            if(std::holds_alternative<std::string>(data.second)) this->__default_internal_server_error = std::get<std::string>(data.second);
-            else throw std::runtime_error("Error: internal_server_error must be a string");
-        }
-        else if(data.first == "unauthorized"){
-            if(std::holds_alternative<std::string>(data.second)) this->__default_unauthorized = std::get<std::string>(data.second);
-            else throw std::runtime_error("Error: unauthorized must be a string");
-        }
-        else if(data.first == "bad_request")
+        if (data.first == "max_connections")
         {
-            if(std::holds_alternative<std::string>(data.second)) this->__default_bad_request = std::get<std::string>(data.second);
-            else throw std::runtime_error("Error: bad_request must be a string");
+            if (std::holds_alternative<int>(data.second))
+                this->MAX_CONNECTIONS = std::get<int>(data.second);
+            else if (std::holds_alternative<std::string>(data.second))
+                this->MAX_CONNECTIONS = std::stoi(std::get<std::string>(data.second));
+            else
+                throw std::runtime_error("Error: max_connections must be an integer");
+        }
+        else if (data.first == "secret_key")
+        {
+            if (std::holds_alternative<std::string>(data.second))
+                this->idGeneratorJWT = idGenerator(std::get<std::string>(data.second));
+            else
+                throw std::runtime_error("Error: secret_key must be a string");
+        }
+        else if (data.first == "default_session_name")
+        {
+            if (std::holds_alternative<std::string>(data.second))
+                this->default_session_name = std::get<std::string>(data.second);
+            else
+                throw std::runtime_error("Error: default_session_name must be a string");
+        }
+        else if (data.first == "not_found")
+        {
+            if (std::holds_alternative<std::string>(data.second))
+                this->__default_not_found = std::get<std::string>(data.second);
+            else
+                throw std::runtime_error("Error: not_found must be a string");
+        }
+        else if (data.first == "internal_server_error")
+        {
+            if (std::holds_alternative<std::string>(data.second))
+                this->__default_internal_server_error = std::get<std::string>(data.second);
+            else
+                throw std::runtime_error("Error: internal_server_error must be a string");
+        }
+        else if (data.first == "unauthorized")
+        {
+            if (std::holds_alternative<std::string>(data.second))
+                this->__default_unauthorized = std::get<std::string>(data.second);
+            else
+                throw std::runtime_error("Error: unauthorized must be a string");
+        }
+        else if (data.first == "bad_request")
+        {
+            if (std::holds_alternative<std::string>(data.second))
+                this->__default_bad_request = std::get<std::string>(data.second);
+            else
+                throw std::runtime_error("Error: bad_request must be a string");
         }
     }
-
 
     if (HTTPS)
     {
@@ -264,38 +294,38 @@ int HttpServer::__setup()
         logger.error("Error while listening for incoming connections");
         return 1;
     }
-    if(HTTPS)
+    if (HTTPS)
         cout << "Servidor https://" << host << ":" << port << " en ejecución " << endl;
     else
         cout << "Servidor http://" << host << ":" << port << " en ejecución " << endl;
     return 0;
 }
 
-std::variant<std::string, int>& HttpServer::operator[](const std::string& key) {
-    return data_[key]; 
+std::variant<std::string, int> &HttpServer::operator[](const std::string &key)
+{
+    return data_[key];
 }
-
 
 void HttpServer::addRoute(const string &path, types::FunctionHandler handler, vector<string> methods)
 {
     this->routes.push_back({path, methods, [handler](Request &args)
-                      {
-                          return handler(args); // Call the original handler with the query and method
-                      }});
+                            {
+                                return handler(args); // Call the original handler with the query and method
+                            }});
 }
 void HttpServer::addRouteFile(const string &endpoint, const string &extension)
 {
-    for(auto &route : routesFile)
-        if(route.path == endpoint)
+    for (auto &route : routesFile)
+        if (route.path == endpoint)
             return;
     try
     {
         this->routesFile.push_back({endpoint, content_type.find(extension)->second});
     }
-    catch(const std::exception& e)
+    catch (const std::exception &e)
     {
         this->routesFile.push_back({endpoint, "application/force-download"});
-    }   
+    }
 }
 void HttpServer::urlfor(const string &endpoint)
 {
@@ -305,7 +335,6 @@ void HttpServer::urlfor(const string &endpoint)
         extension = endpoint.substr(index + 1);
     addRouteFile(endpoint, extension);
 }
-
 
 void HttpServer::setNotFound(const types::defaultFunctionHandler &handler)
 {
