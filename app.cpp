@@ -3,51 +3,25 @@
 #include "src/usersdb.h"
 #include "src/curl.h"
 
-
-
 using json = nlohmann::json;
 using namespace std;
 
-const int PORT = 8444;
+const int PORT = 8445;
 
 CurlHandler curl;
 
 string HTTPScontext[] = {"secrets/cert.pem", "secrets/key.pem"};
 
-HttpServer server(PORT,  "172.30.50.94");
+HttpServer server(PORT, "10.1.1.101");
 UsersDB DATABASE("secrets/users.db");
 
-types::HttpResponse showApiData(Request &req)
-{
-    auto data = curl.get("https://api.open-meteo.com/v1/forecast?latitude=52.52&longitude=13.41&hourly=temperature_2m", {"Content-Type: application/json"});
-    nlohmann::json json_data = nlohmann::json::parse(data);
 
-    // get the:
-    // "hourly": {
-    //     "temperature_2m": [ ... ],
-    //     "time": [ ... ]
-    // }
-    // and create a dictionary with the time and temperature
-    nlohmann::json hourly = json_data["hourly"];
-    nlohmann::json temperature_2m = hourly["temperature_2m"];
-    nlohmann::json time = hourly["time"];
-
-    json temps;
-
-    for (int i = 0; i < time.size(); i++)
-    {
-        temps.push_back({time[i], temperature_2m[i]});
-    }
-
-    return server.Render("templates/api_data.html", {{"data", temps}});
-}
 
 types::HttpResponse apiHome(Request &req)
 {
     std::string url = "https://api.open-meteo.com/v1/forecast?latitude=52.52&longitude=13.41&hourly=temperature_2m";
     std::vector<std::string> headers = {
-        "Content-Type: application/json"
-    };
+        "Content-Type: application/json"};
 
     std::string response = curl.get(url, headers);
 
@@ -59,7 +33,7 @@ types::HttpResponse apiHome(Request &req)
 
 types::HttpResponse home(Request &req)
 {
-    if (req.method == POST)
+    if (req.method == HttpMethods::POST)
     {
         if (req.session["logged"] == "true")
         {
@@ -71,7 +45,7 @@ types::HttpResponse home(Request &req)
                 {
                     unordered_map post1 = DATABASE["POSTS"].getByID(to_string(i));
                     // {post1["autor"]}, post1["contenido"]
-                    json p = { {"user", post1["autor"]}, {"post", post1["contenido"]} };
+                    json p = {{"user", post1["autor"]}, {"post", post1["contenido"]}};
                     POSTS.push_back(p);
                 }
             }
@@ -85,7 +59,7 @@ types::HttpResponse home(Request &req)
             return server.Render("templates/home.html");
         return server.Redirect("/");
     }
-    else if (req.method == GET)
+    else if (req.method == HttpMethods::GET)
     {
         if (req.session["logged"] == "true")
         {
@@ -95,7 +69,7 @@ types::HttpResponse home(Request &req)
                 for (size_t i = 1; i <= DATABASE["POSTS"].countRows(); i++)
                 {
                     unordered_map post1 = DATABASE["POSTS"].getByID(to_string(i));
-                    json p = { {"user", post1["autor"]}, {"post", post1["contenido"]} };
+                    json p = {{"user", post1["autor"]}, {"post", post1["contenido"]}};
                     POSTS.push_back(p);
                 }
             }
@@ -127,20 +101,20 @@ types::HttpResponse images(Request &req)
 
 types::HttpResponse login(Request &req)
 {
-    if (req.method == GET)
+    if (req.method == HttpMethods::GET)
     {
-        if (req.session["logged"] == "true" )
+        if (req.session["logged"] == "true")
             return server.Redirect("/");
         return server.Render("templates/login.html");
     }
-    else if (req.method == POST)
+    else if (req.method == HttpMethods::POST)
     {
         // vector<vector<string>> USERS;
         try
         {
             vector<string> user = DATABASE.getUser(req.form["fname"]);
 
-            if(user.size() == 0)
+            if (user.size() == 0)
                 return server.Render("templates/login.html", {{"error", "true"}});
 
             if (crypto_lib::calculateSHA512(req.form["fpass"]) == user[2] && req.form["fname"] == user[1])
@@ -162,13 +136,14 @@ types::HttpResponse login(Request &req)
 
 types::HttpResponse logout(Request &req)
 {
-    if (req.session["logged"] == "true" )
+    if (req.session["logged"] == "true")
         req.session.destroySession();
     return server.Redirect("/login");
 }
 
 int main(int argc, char **argv)
 {
+    
     try
     {
 
@@ -189,19 +164,39 @@ int main(int argc, char **argv)
     server["secret_key"] = uuid::generate_uuid_v4();
     server["max_connections"] = 10;
 
-    server.addRoute("/api", apiHome, {GET, POST});
-    server.addRoute("/api/<id>", apiHome, {GET, POST});
+    server.addRoute("/api", apiHome, {HttpMethods::GET, HttpMethods::POST});
+    server.addRoute("/api/<id>", apiHome, {HttpMethods::GET, HttpMethods::POST});
 
-    server.addRoute("/show", showApiData, {GET, POST});
+    server.addRoute("/show",
+                    [](Request &req)
+                    {
+                        auto data = curl.get("https://api.open-meteo.com/v1/forecast?latitude=52.52&longitude=13.41&hourly=temperature_2m", {"Content-Type: application/json"});
+                        nlohmann::json json_data = nlohmann::json::parse(data);
+
+                        nlohmann::json hourly = json_data["hourly"];
+                        nlohmann::json temperature_2m = hourly["temperature_2m"];
+                        nlohmann::json time = hourly["time"];
+
+                        json temps;
+
+                        for (int i = 0; i < time.size(); i++)
+                        {
+                            temps.push_back({time[i], temperature_2m[i]});
+                        }
+
+                        return server.Render("templates/api_data.html", {{"data", temps}});
+                    },
+                    {HttpMethods::GET});
 
     // Ruta sin variables
-    server.addRoute("/home", home, {GET, POST});
-    server.addRoute("/", home, {GET, POST});
-    server.addRoute("/user/<iuserid>", user_account, {GET, POST});
+    server.addRoute("/home", home, {HttpMethods::GET, HttpMethods::POST});
+    server.addRoute("/", home, {HttpMethods::GET, HttpMethods::POST});
+    server.addRoute("/user/<iuserid>", user_account, {HttpMethods::GET, HttpMethods::POST});
 
-    server.addRoute("/login", login, {GET, POST});
-    server.addRoute("/logout", logout, {GET});
-    server.addRoute("/image/<id>", images, {GET});
+    server.addRoute("/login", login, {HttpMethods::GET, HttpMethods::POST});
+    server.addRoute("/logout", logout, {HttpMethods::GET});
+    server.addRoute("/image/<id>", images, {HttpMethods::GET});
 
+    server.logger.log("Server running on pid:", to_string(getpid()));
     server.startListener();
 }

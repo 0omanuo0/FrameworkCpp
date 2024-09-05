@@ -14,15 +14,18 @@
 #include <algorithm>
 #include <cctype>
 
-const std::string GET = "GET";
-const std::string POST = "POST";
-const std::string PUT = "PUT";
-const std::string PATCH = "PATCH";
-const std::string DELETE = "DELETE";
-const std::string OPTIONS = "OPTIONS";
-const std::string HEAD = "HEAD";
-const std::string CONNECT = "CONNECT";
-const std::string TRACE = "TRACE";
+namespace HttpMethods
+{
+    const std::string GET = "GET";
+    const std::string POST = "POST";
+    const std::string PUT = "PUT";
+    const std::string PATCH = "PATCH";
+    const std::string DELETE = "DELETE";
+    const std::string OPTIONS = "OPTIONS";
+    const std::string HEAD = "HEAD";
+    const std::string CONNECT = "CONNECT";
+    const std::string TRACE = "TRACE";
+}
 
 // acepted request headers types
 enum headerType
