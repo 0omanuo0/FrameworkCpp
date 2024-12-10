@@ -9,11 +9,14 @@
 
 using Json = nlohmann::json;
 
-namespace JinjaFunctions {
+namespace JinjaFunctions
+{
     inline Json length(const Json &data)
     {
-        if(data.is_string()) return data.get<std::string>().size();
-        if(data.is_object() || data.is_array()) return data.size();
+        if (data.is_string())
+            return data.get<std::string>().size();
+        if (data.is_object() || data.is_array())
+            return data.size();
         return 0;
     }
     inline Json sum(const Json &data)
@@ -31,9 +34,12 @@ namespace JinjaFunctions {
     {
         std::string str;
 
-        if (data.is_string()) str = data.get<std::string>();
-        else if (data.is_array() || data.is_object()) str = data.dump();
-        else return nullptr;
+        if (data.is_string())
+            str = data.get<std::string>();
+        else if (data.is_array() || data.is_object())
+            str = data.dump();
+        else
+            return nullptr;
 
         if (!str.empty())
             str[0] = std::toupper(str[0]);
@@ -43,9 +49,12 @@ namespace JinjaFunctions {
     {
         std::string str;
 
-        if (data.is_string()) str = data.get<std::string>();
-        else if (data.is_array() || data.is_object()) str = data.dump();
-        else return nullptr;
+        if (data.is_string())
+            str = data.get<std::string>();
+        else if (data.is_array() || data.is_object())
+            str = data.dump();
+        else
+            return nullptr;
 
         std::transform(str.begin(), str.end(), str.begin(), ::tolower);
         return str;
@@ -54,13 +63,15 @@ namespace JinjaFunctions {
     {
         std::string str;
 
-        if (data.is_string()) str = data.get<std::string>();
-        else if (data.is_array() || data.is_object()) str = data.dump();
-        else return nullptr;
+        if (data.is_string())
+            str = data.get<std::string>();
+        else if (data.is_array() || data.is_object())
+            str = data.dump();
+        else
+            return nullptr;
 
         std::transform(str.begin(), str.end(), str.begin(), ::toupper);
         return str;
-
     }
     inline Json first(const Json &data)
     {
@@ -88,6 +99,13 @@ namespace JinjaFunctions {
         {
             std::reverse(data.begin(), data.end());
             return data;
+        }
+        else if (data.is_object())
+        {
+            Json reversed;
+            for (auto it = data.rbegin(); it != data.rend(); ++it)
+                reversed[it.key()] = it.value();
+            return reversed;
         }
         else if (data.is_string())
         {
@@ -137,8 +155,7 @@ namespace JinjaFunctions {
         {"reverse", reverse},
         {"sort", sort},
         {"str", str},
-        {"join", join}
-    };
+        {"join", join}};
 }
 
 #endif // JINJAFUNCTIONS_H

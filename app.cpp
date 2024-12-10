@@ -14,7 +14,7 @@ CurlHandler curl;
 
 string HTTPScontext[] = {"secrets/cert.pem", "secrets/key.pem"};
 
-HttpServer server(PORT, HTTPScontext, "ubuntu-manu.local");
+HttpServer server(PORT,  "172.30.50.94");
 UsersDB DATABASE("secrets/users.db");
 
 types::HttpResponse showApiData(Request &req)
@@ -104,7 +104,7 @@ types::HttpResponse home(Request &req)
                 std::cerr << e.what() << '\n';
             }
             json data = {{"user", req.session["user"]}, {"posts", POSTS}};
-            std::cout << data.dump(4) << std::endl;
+            // std::cout << data.dump(4) << std::endl;
             return server.Render("templates/home_logged.html", data);
         }
         else
