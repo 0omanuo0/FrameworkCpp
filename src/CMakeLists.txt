@@ -12,6 +12,13 @@ include_directories(${SRC_DIR} ${SRC_DIR}/jinjaTemplating ${SRC_DIR}/tools)
 # Define el ejecutable principal que usa la biblioteca
 add_executable(httpserver ${CMAKE_SOURCE_DIR}/app.cpp)
 
+
+# Añade el subdirectorio my_expr
+add_subdirectory(jinjaTemplating/my_expr)
+# Enlazar la biblioteca al ejecutable principal
+target_link_libraries(httpserver my_expr_lib)
+
+
 # Linkear el ejecutable principal con la biblioteca
 target_link_libraries(httpserver httpserver_lib ssl crypto sqlite3 curl stdc++fs)
 
