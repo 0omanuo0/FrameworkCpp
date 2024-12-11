@@ -1,44 +1,23 @@
-# src/CMakeLists.txt
+# Recopila los archivos fuente de la librería
+file(GLOB LIB_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp jinjaTemplating/*.cpp tools/*.cpp)
 
-# Source files
-file(GLOB SRCS *.cpp jinjaTemplating/*.cpp tools/*.cpp)
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--export-dynamic")
+# Define la biblioteca (estática o dinámica)
+add_library(httpserver_lib STATIC ${LIB_SOURCES})
 
+# Incluir directorios
+include_directories(${CMAKE_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/jinjaTemplating ${CMAKE_SOURCE_DIR}/tools)
 
-# Crear una biblioteca estática o compartida
-add_library(httpserver_lib ${SRCS})
-
-# Common CXX flags
-include_directories(${SRC_DIR} ${SRC_DIR}/jinjaTemplating ${SRC_DIR}/tools)
-
-# Define el ejecutable principal que usa la biblioteca
-add_executable(httpserver ${CMAKE_SOURCE_DIR}/app.cpp)
-
-
-# Añade el subdirectorio my_expr
+# Añadir subdirectorio de my_expr
 add_subdirectory(jinjaTemplating/my_expr)
-# Enlazar la biblioteca al ejecutable principal
-target_link_libraries(httpserver my_expr_lib)
-target_link_libraries(httpserver_lib my_expr_lib)
 
+# Linkea la biblioteca externa requerida
+target_link_libraries(httpserver_lib my_expr_lib ssl crypto sqlite3 curl stdc++fs dl)
 
-# Linkear el ejecutable principal con la biblioteca
-target_link_libraries(httpserver httpserver_lib ssl crypto sqlite3 curl stdc++fs dl)
-
-# Set the output directory for the executable
-set_target_properties(httpserver PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${BIN_DIR}
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${BIN_DIR}
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${RELEASE_DIR}
+# Opciones de compilación para la librería
+target_compile_options(httpserver_lib PRIVATE
+    $<$<CONFIG:Debug>:-Wall -g -Og -O0 -DDEBUG>
+    $<$<CONFIG:Release>:-O3>
 )
 
-# Compiler flags
-set(DEBUG_CXXFLAGS "-Wall -g -Og -O0 -DDEBUG -rdynamic -fdiagnostics-color=always")
-set(RELEASE_CXXFLAGS "-O3")
-
-
-# Debug configuration
-set_target_properties(httpserver PROPERTIES COMPILE_FLAGS_DEBUG ${DEBUG_CXXFLAGS})
-
-# Release configuration
-set_target_properties(httpserver PROPERTIES COMPILE_FLAGS_RELEASE ${RELEASE_CXXFLAGS})
+# Incluye directorios de cabeceras
+target_include_directories(httpserver_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
