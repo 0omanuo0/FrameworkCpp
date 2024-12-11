@@ -27,7 +27,7 @@ jobs:
       run: sudo apt-get install -y libgtest-dev
 
     - name: Install curl and libcurl
-      run: sudo apt-get install -y curl libcurl4-openssl-dev
+      run: sudo apt-get install -y curl libcurl4-openssl-dev build-essential libssl-dev 
 
     - name: Add GitSubmodule
       run: git submodule update --init --recursive
