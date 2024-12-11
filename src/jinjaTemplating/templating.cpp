@@ -71,7 +71,7 @@ std::string Templating::Render(const std::string &file, const nlohmann::json &da
     {
         this->server->logger.error(e.what());
         auto data_ = e.getData();
-        if(data_.is_null())
+        if (data_.is_null())
             data_ = data;
 
         return render_error(e.what(), e.getStackTrace(), e.getFile(), e.getLine(), data_, root);
@@ -182,11 +182,13 @@ std::string Templating::__renderIfBlock(Block &ifBlock, nlohmann::json &data)
         newBlock.type = BlockType::SUBBLOCK;
         newBlock.content = subBlock.content;
         newBlock.children = subBlock.children;
+        newBlock.compiledExpression.compile(subBlock.expression);
         return newBlock;
     };
-
+    ifBlock.compiledExpression.set_variables(convert_to_variant_map(data));
+    auto r = ifBlock.compiledExpression.eval().toNumber();
     // Evaluate the main ifBlock expression
-    if ((bool)__evaluateExpression(ifBlock.expression, data))
+    if ((bool)r)
     {
         return this->__Render(ifBlock, data);
     }
@@ -195,7 +197,9 @@ std::string Templating::__renderIfBlock(Block &ifBlock, nlohmann::json &data)
         // Iterate through subBlocks (ELIF and ELSE)
         for (auto &subBlock : ifBlock.subBlocks)
         {
-            if (subBlock.type == SubBlockType::ELIF && (bool)__evaluateExpression(subBlock.expression, data))
+            subBlock.compiledExpression.set_variables(convert_to_variant_map(data));
+
+            if (subBlock.type == SubBlockType::ELIF && (bool)subBlock.compiledExpression.eval().toNumber())
             {
                 auto newBlock = createBlock(subBlock);
                 return this->__Render(newBlock, data);
@@ -239,21 +243,16 @@ std::string Templating::__renderForBlock(Block &forBlock, nlohmann::json &data)
 
     // Handle JSON array or object-based loops
     // get the value and the filters
-    FilterData filterData = getFilters(iterable);
-    auto iterable_parsed = filterData.value;
-    auto filters = filterData.filters;
-
-    // evaluate the value with the filters
-    nlohmann::json it = accessJsonValue(data, iterable_parsed);
-    if (it == nullptr) // If the iterable is not found in the data
-        throw Templating_RenderError("Invalid iterable: " + iterable + " is not an array or an object", forBlock, __FILE__, __LINE__, data);
-
-    it = applyFilters(filters, it);
+    auto exprEval = expr(expression);
+    const auto data_as_map = data.get<std::unordered_map<std::string, nlohmann::json>>();
+    exprEval.set_variables(convert_to_variant_map(data_as_map));
+    exprEval.compile();
+    const auto it = exprEval.eval();
 
     if (it.is_array())
     {
         // Iterate over JSON array
-        auto values = it.get<std::vector<nlohmann::json>>();
+        auto values = it.toJson().get<std::vector<json_t>>();
         for (auto &item : values)
         {
             data[value] = item;
@@ -263,7 +262,7 @@ std::string Templating::__renderForBlock(Block &forBlock, nlohmann::json &data)
     else if (it.is_object())
     {
         // Iterate over JSON object
-        auto values = convertToMap(it);
+        auto values = it.toJson().get<std::unordered_map<std::string, json_t>>();
         if (values.empty())
             throw Templating_RenderError("Invalid iterable: " + iterable + " is not an object", forBlock, __builtin_FILE(), __builtin_LINE(), data);
         for (auto &item : values)
@@ -275,10 +274,10 @@ std::string Templating::__renderForBlock(Block &forBlock, nlohmann::json &data)
             result += this->__Render(forBlock, allData);
         }
     }
-    else if (it.is_string())
+    else if (it.isString())
     {
         // Iterate over characters in a string
-        for (auto &item : it.get<std::string>())
+        for (auto &item : it.toString())
         {
             data[value] = item;
             result += this->__Render(forBlock, data);
@@ -301,6 +300,7 @@ Block Templating::BlockParser(std::istream &stream, Block parent)
         newBlock.type = type;
         newBlock.indexToPlace = indexToPlace;
         newBlock.expression = expression;
+        newBlock.compiledExpression.compile(expression);
         return newBlock;
     };
 
@@ -349,6 +349,7 @@ Block Templating::BlockParser(std::istream &stream, Block parent)
                 SubBlock subBlock;
                 subBlock.type = SubBlockType::ELIF;
                 subBlock.expression = match[1].str();
+                subBlock.compiledExpression.compile(subBlock.expression);
                 block.subBlocks.push_back(subBlock);
             }
             else if (std::regex_search(statement, match, else_pattern) && block.type == BlockType::IF)
@@ -383,7 +384,7 @@ std::string Templating::__renderExpressions(std::string expression, nlohmann::js
 
     std::string resultString;
     std::smatch match;
-
+    // std::cout << data.dump() << std::endl;
     // Check if is a jinja expression. e.g., {{ expression }}
     if (std::regex_search(expression, match, expression_pattern))
     {
@@ -398,68 +399,45 @@ std::string Templating::__renderExpressions(std::string expression, nlohmann::js
             right = this->__renderExpressions(right, data);
         resultString = left;
 
-        // Evaluate the expression, it handles filters and variables from the json data
-        double result = __evaluateExpression(value, data);
-
-        // Check if the result is a NaN, if so, it could be a urlfor expression or just a string variable
-        if (std::isnan(result))
+        const auto url_for_function = [this](const token_data_t *args) -> token_data_t
         {
-            if (std::regex_search(value, match, urlfor_string_pattern))
+            const int type = args[0].index();
+            string_t path = "";
+            if (type == 1)
             {
-                std::string url = match[2].str();
-
-                auto urlData = accessJsonValue(data, url);
-
-                if (urlData == nullptr)
-                    url = match[2].str();
-                else if (urlData.is_string())
-                    url = urlData.get<std::string>();
-                else
-                    url = urlData.dump();
-#ifdef SERVER_H
-                if (this->server != nullptr)
-                    this->server->urlfor(url);
-#endif
-                resultString += url;
+                path = std::get<string_t>(args[0]);
+                if (path.empty())
+                    return token_data_t(string_t(""));
             }
-            else if (std::regex_search(value, match, urlfor_pattern))
+            else if (type == 2)
             {
-                std::string url = match[1].str();
+                // auto a = std::get<json_t>(value).dump();
+                path = std::get<json_t>(args[0]).dump();
+                if (path.empty())
+                    return token_data_t(string_t(""));
+                path = (char)path[0] == '"' ? path.substr(1, path.size() - 2) : path;
 
-                auto urlData = accessJsonValue(data, url);
-
-                if (urlData == nullptr)
-                    url = match[1].str();
-                else if (urlData.is_string())
-                    url = urlData.get<std::string>();
-                else
-                    url = urlData.dump();
-
-#ifdef SERVER_H
-                if (this->server != nullptr)
-                    this->server->urlfor(url);
-#endif
-                resultString += url;
+                // return a;
             }
             else
-            {
-                auto result = trimm(value);
-                __preprocessExpression(result, data);
-                resultString += result;
-                // if(result == nullptr)
-                //     resultString += value;
-                // else if (result.is_string())
-                //     resultString += result.get<std::string>();
-                // else
-                //     resultString += result.dump();
-            }
-            return resultString + right;
-        }
-        // if can be integer converted
-        if (result == (int)result)
-            return resultString + std::to_string((int)result) + right;
+                return token_data_t(string_t(""));
 
-        return resultString + std::to_string(result) + right;
+#ifdef SERVER_H
+            if (this->server != nullptr)
+                this->server->urlfor(path);
+#endif
+            return path;
+        };
+
+        // Evaluate the expression, it handles filters and variables from the json data
+        expr expressionEval(value);
+        auto a = convert_to_variant_map(data);
+        expressionEval.set_variables(a);
+        expressionEval.set_functions({{"urlfor", {url_for_function, 1}}});
+        expressionEval.compile();
+        const auto result = expressionEval.eval().toString(true);
+
+        return resultString + result + right;
     }
     return expression;
 }
