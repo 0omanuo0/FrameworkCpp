@@ -43,7 +43,7 @@ enum LogLevel
 	ERROR = 1,
 	WARNING = 2,
 	INFO = 3,
-	DEBUG = 4
+	DEBUG_L = 4
 };
 
 class logging
@@ -127,12 +127,12 @@ private:
 
 	void prototypeLog(const LogLevel &logType, const std::string &logMessage, const std::string &logData = "")
 	{
-		if(!DEBUG_LOG && logType == LogLevel::DEBUG) return;
+		if(!DEBUG_LOG && logType == LogLevel::DEBUG_L) return;
 		if (this->logLevel == 0)
 			return;
         auto l = (int)logType;
-        auto a = logType != LogLevel::DEBUG;
-		if (this->logLevel < (int)logType && logType != LogLevel::DEBUG)
+        auto a = logType != LogLevel::DEBUG_L;
+		if (this->logLevel < (int)logType && logType != LogLevel::DEBUG_L)
 			return;
 
 		std::string logResult = this->logStructure;
@@ -247,22 +247,22 @@ public:
 
 	LogStream log()
 	{
-		return LogStream(*this, INFO);
+		return LogStream(*this, LogLevel::INFO);
 	}
 
 	LogStream warning()
 	{
-		return LogStream(*this, WARNING);
+		return LogStream(*this, LogLevel::WARNING);
 	}
 
 	LogStream error()
 	{
-		return LogStream(*this, ERROR);
+		return LogStream(*this, LogLevel::ERROR);
 	}
 
 	LogStream debug()
 	{
-		return LogStream(*this, DEBUG);
+		return LogStream(*this, LogLevel::DEBUG_L);
 	}
 };
 
