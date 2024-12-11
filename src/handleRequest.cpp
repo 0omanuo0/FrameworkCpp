@@ -301,11 +301,24 @@ int HttpServer::__handle_request(int socket, SSL *ssl)
             routes[indexRoute].cache_response = responseHandler;
         }
         else
-            responseHandler = route.handler(arg);
+            try
+            {
+                responseHandler = route.handler(arg);
+            }
+            catch (const std::exception &e)
+            {
+                logger.warning("Error while handling the request", e.what());
+                auto s = Session();
+                Request req(s);
+                Response internalServerError = this->__internal_server_error_handler(req);
+                __send_response(ssl, socket, internalServerError.generateResponse());
+                __wait_socket(socket, ssl);
+                return 0;
+            }
 
         Response response = std::holds_alternative<string>(responseHandler)
-                    ? Response(std::get<string>(responseHandler))
-                    : std::get<Response>(responseHandler);
+                                ? Response(std::get<string>(responseHandler))
+                                : std::get<Response>(responseHandler);
 
         if (session.deleted)
             this->sessions.erase(this->sessions.begin() + session_index);
