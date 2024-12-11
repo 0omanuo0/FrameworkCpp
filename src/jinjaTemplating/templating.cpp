@@ -243,7 +243,7 @@ std::string Templating::__renderForBlock(Block &forBlock, nlohmann::json &data)
 
     // Handle JSON array or object-based loops
     // get the value and the filters
-    auto exprEval = expr(expression);
+    auto exprEval = expr(iterable);
     const auto data_as_map = data.get<std::unordered_map<std::string, nlohmann::json>>();
     exprEval.set_variables(convert_to_variant_map(data_as_map));
     exprEval.compile();
