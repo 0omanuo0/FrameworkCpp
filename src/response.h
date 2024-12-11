@@ -30,6 +30,8 @@ public:
     Response(const std::string &responseMessage, int responseCode=200, std::map<std::string, std::string> headers = {});
     int getResponseCode() {return this->statusCode;}
 
+    bool isEmpty() {return this->message.empty();}
+
     void addHeader(std::string key, std::string value) {this->headers[key] = value;}
     void addSessionCookie(std::string key, std::string sessionID) {this->cookies[key] = sessionID;}
     void setIsFile(std::string contentType, int fileLength);

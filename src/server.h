@@ -58,6 +58,8 @@ namespace types{
     {
         std::string path;
         std::vector<std::string> methods;
+        types::HttpResponse cache_response;
+        bool cache_route;
         FunctionHandler handler;
     };
     struct RouteFile
@@ -138,7 +140,7 @@ private:
     int __wait_socket(int socket, SSL *ssl);
     std::string __recv(SSL *ssl, int socket);
 
-    void addRouteFile(const std::string &endpoint, const std::string &extension);
+    void addRouteFile(std::string endpoint, const std::string &extension);
     Session setNewSession(Session session);
 
 public:
@@ -169,7 +171,7 @@ public:
     /// @param path Route to the endpoint in browser
     /// @param handler The function to handle the request, can return a std::string or a Response
     /// @param methods The methods allowed to access the endpoint
-    void addRoute(const std::string &path, types::FunctionHandler handler, std::vector<std::string> methods);
+    void addRoute(const std::string &path, types::FunctionHandler handler, std::vector<std::string> methods, bool cache_route = false);
 
     /// @brief Function add a file to the server
     /// @param endpoint Route to the file, also the route to the file in the browse
