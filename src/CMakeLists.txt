@@ -19,6 +19,7 @@ add_executable(httpserver ${CMAKE_SOURCE_DIR}/app.cpp)
 add_subdirectory(jinjaTemplating/my_expr)
 # Enlazar la biblioteca al ejecutable principal
 target_link_libraries(httpserver my_expr_lib)
+target_link_libraries(httpserver_lib my_expr_lib)
 
 
 # Linkear el ejecutable principal con la biblioteca
@@ -28,7 +29,7 @@ target_link_libraries(httpserver httpserver_lib ssl crypto sqlite3 curl stdc++fs
 set_target_properties(httpserver PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${BIN_DIR}
     RUNTIME_OUTPUT_DIRECTORY_DEBUG ${BIN_DIR}
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${BIN_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${RELEASE_DIR}
 )
 
 # Compiler flags
