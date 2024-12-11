@@ -32,6 +32,7 @@ public:
         : parameters(vars_f), socket(socket_f), ssl(ssl), headers(method_f), session(session_f), method(method.method), route(method.route), query(method.query) {
             if (method.content.isDict())
                 form = method.content.getDict();
+            content = method.content;
         }
     Request(std::unordered_map<std::string, std::string> vars_f, httpHeaders method_f, Session& session_f, HttpRequest method)
         : parameters(vars_f), headers(method_f), session(session_f), method(method.method), route(method.route), query(method.query) {}
