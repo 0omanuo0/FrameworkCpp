@@ -10,10 +10,6 @@
 #include <unordered_map>
 
 #include "types.h"
-#include "json.hpp"
-#include "jinjaFunctions.h"
-#include "tinyexpr.h"
-#include "templating.h"
 
 inline bool is_number(const nlohmann::json &j, std::string key)
 {
@@ -53,171 +49,6 @@ inline std::string trimm(const std::string &str)
     return s;
 }
 
-inline nlohmann::json accessJsonValue(const nlohmann::json &data, const std::string &key)
-{
-    std::regex pattern(R"(([^.\[\]]+)|(\[.*?\]))");
-    auto cp = trimm(key);
-    std::regex_iterator<std::string::iterator> iter(cp.begin(), cp.end(), pattern);
-    std::regex_iterator<std::string::iterator> end;
-
-    nlohmann::json value = data;
-    for (; iter != end; ++iter)
-    {
-        try
-        {
-            if (!iter->str(1).empty())
-            {
-                auto t = iter->str(1);
-                if (t.front() >= '0' && t.front() <= '9')
-                    value = value[std::stoi(t)];
-                else
-                    value = value[t];
-            }
-            else if (!iter->str(2).empty())
-            {
-                auto t = iter->str(2);
-                t = t.substr(1, t.size() - 2);
-                if (t.front() >= '0' && t.front() <= '9')
-                    value = value[std::stoi(t)];
-                else
-                {
-                    auto g = accessJsonValue(data, t);
-                    if (g.is_number_integer() || g.is_number_unsigned() || g.is_number_float() || g.is_number())
-                        value = value[g.get<long>()];
-                    else if (g.is_string())
-                        value = value[g.get<std::string>()];
-                    else
-                        throw Templating_RenderError("The key " + key + " is not valid", {}, __builtin_FILE(), __builtin_LINE());
-                }
-            }
-        }
-        catch (const std::exception &e)
-        {
-            auto dataa = data.dump();
-            // std::cout << dataa << std::endl;
-            throw Templating_RenderError("The key " + key + " is not valid", {}, __builtin_FILE(), __builtin_LINE());
-        }
-    }
-    return value;
-}
-
-struct FilterData
-{
-    std::string value;
-    std::vector<std::string> filters;
-};
-
-inline FilterData getFilters(const std::string &expression)
-{
-    // check if the expression has something like (filters or functions)
-    // value|length|sum|length|capitalize|lower|upper|first|last|reverse|sort|str|json|join|replace|split|slice|range
-
-    // check if the first or last character is a pipe if so, throw an error
-    if (expression.front() == '|' || expression.back() == '|')
-        throw Templating_RenderError("The expression " + expression + " is not valid", {}, __builtin_FILE(), __builtin_LINE());
-
-    const std::regex filter_pattern(R"(([^|]+))");
-    // check every filter, the first match is the value and the rest are filters
-
-    std::smatch match;
-    std::string value;
-    std::vector<std::string> filters;
-    if (std::regex_search(expression, match, filter_pattern))
-    {
-        value = match[1].str();
-        std::string filters_str = expression.substr(match[1].length());
-        std::regex filter_pattern(R"(\|([^|]+))");
-        std::sregex_token_iterator iter(filters_str.begin(), filters_str.end(), filter_pattern, 1);
-        std::sregex_token_iterator end;
-        for (; iter != end; ++iter)
-        {
-            filters.push_back(trimm(iter->str()));
-        }
-    }
-    return {value, filters};
-}
-
-inline nlohmann::json applyFilters(const std::vector<std::string> &filters, const nlohmann::json &data)
-{
-    nlohmann::json result = data;
-
-    std::vector<std::string> filters_reversed = filters;
-
-    std::reverse(filters_reversed.begin(), filters_reversed.end());
-
-    for (auto &filter : filters_reversed)
-    {
-        if (JinjaFunctions::functions.find(filter) != JinjaFunctions::functions.end())
-        {
-            result = JinjaFunctions::functions.at(filter)(result);
-        }
-        else
-        {
-            throw Templating_RenderError("The filter " + filter + " is not valid", {}, __builtin_FILE(), __builtin_LINE());
-        }
-    }
-    return result;
-}
-
-inline void __preprocessExpression(std::string &expression, const nlohmann::json &data)
-{
-    // get the value and the filters
-    FilterData filterData = getFilters(expression);
-    expression = filterData.value;
-    auto filters = filterData.filters;
-
-    // evaluate the value with the filters
-    nlohmann::json result = accessJsonValue(data, expression);
-    if (!filters.empty())
-        result = applyFilters(filters, result);
-
-    // convert the result to string
-    expression = jsonToString(result);
-}
-
-inline double __evaluateExpression(std::string expression, const nlohmann::json &data)
-{
-    te_parser parser;
-    std::set<std::string> variables;
-
-    parser.set_unknown_symbol_resolver(
-        [&variables, data](std::string_view symbol) -> te_type
-        {
-            variables.insert(std::string(symbol));
-            auto expr = std::string(symbol);
-            try
-            {
-                __preprocessExpression(expr, data);
-                // ckeck if is a number
-                return stringToNumber(expr);
-            }
-            catch (const std::exception &e)
-            {
-                auto value = accessJsonValue(data, expr);
-                if (value == nullptr)
-                    return 0;
-                if (value.is_number())
-                    return value.get<double>();
-                else if (value.is_string())
-                {
-                    return stringToNumber(value.get<std::string>());
-                }
-            }
-            return std::numeric_limits<double>::quiet_NaN();
-        });
-
-    try
-    {
-        if (parser.compile(expression))
-            return parser.evaluate();
-        else
-            return std::numeric_limits<double>::quiet_NaN();
-    }
-    catch (const std::exception &e)
-    {
-        return std::numeric_limits<double>::quiet_NaN();
-    }
-}
 
 inline std::pair<long, long> process_range(const std::string &iterable, const nlohmann::json &data)
 {
@@ -236,7 +67,10 @@ inline std::pair<long, long> process_range(const std::string &iterable, const nl
             long val = strtol(str.c_str(), &p, 10); // Intenta convertir la cadena a número
             if (*p)                                 // Si no es un número puro
             {
-                double eval_result = __evaluateExpression(str, data); // Intenta evaluar la expresión
+                expr expressionEval(str); // Crea una instancia de 'expr' con la cadena
+                expressionEval.set_variables(convert_to_variant_map(data)); // Establece las variables de la expresión
+                expressionEval.compile(); // Compila la expresión
+                double eval_result = expressionEval.eval().toNumber(); // Convierte el resultado a número
                 if (eval_result != std::numeric_limits<double>::quiet_NaN())
                     return static_cast<long>(eval_result);
                 if (is_number(data, str)) // Verifica si el valor es un número en 'data'
