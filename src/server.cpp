@@ -278,7 +278,7 @@ std::variant<std::string, int>& HttpServer::operator[](const std::string& key) {
 
 void HttpServer::addRoute(const string &path, types::FunctionHandler handler, vector<string> methods, bool cache_route)
 {
-    this->routes.push_back({path, methods, cache_route, [handler](Request &args)
+    this->routes.push_back({path, methods, std::string(), cache_route, [handler](Request &args)
                       {
                           return handler(args); // Call the original handler with the query and method
                       }});
