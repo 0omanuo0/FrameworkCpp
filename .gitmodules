@@ -1,3 +1,4 @@
 [submodule "src/jinjaTemplating/my_expr"]
 	path = src/jinjaTemplating/my_expr
 	url = https://github.com/0omanuo0/my_expr
+	branch = master
