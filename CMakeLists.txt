@@ -17,6 +17,7 @@ endif(COMMAND cmake_policy)
 set(SRC_DIR ${CMAKE_SOURCE_DIR}/src)
 set(TESTS_DIR ${CMAKE_SOURCE_DIR}/tests)
 set(BIN_DIR ${CMAKE_SOURCE_DIR}/bin)
+set(RELEASE_DIR ${BIN_DIR}/release)
 
 # Create binary directory if it doesn't exist
 file(MAKE_DIRECTORY ${BIN_DIR})
