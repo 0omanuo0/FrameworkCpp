@@ -43,7 +43,7 @@ const std::string contentString = R"(
                 {% for user in users %}
                     <h1>{{ user.name }}</h1>
                     <p>{{ user.address.city }}, {{ user.address.details.global[1] }}</p>
-                    <p>{{ user.hobbies | join }}</p>
+                    <p>{{ join(user.hobbies, ", ") }}</p>
                     {% if user.age >= 18 %}
                         <p>Adult</p>
                     {% endif %}
