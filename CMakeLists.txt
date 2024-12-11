@@ -1,33 +1,32 @@
 cmake_minimum_required(VERSION 3.10)
-
 project(HttpServer)
 
-# Set C++ standard to C++17
+# Establecer el estándar de C++
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
-# Set CMake policies to avoid warnings
-if(COMMAND cmake_policy)
-    cmake_policy(SET CMP0003 NEW)
-    cmake_policy(SET CMP0012 NEW)
-    cmake_policy(SET CMP0028 NEW)
-endif(COMMAND cmake_policy)
-
-# Source and binary directories
+# Definir directorios
 set(SRC_DIR ${CMAKE_SOURCE_DIR}/src)
-set(TESTS_DIR ${CMAKE_SOURCE_DIR}/tests)
 set(BIN_DIR ${CMAKE_SOURCE_DIR}/bin)
-set(RELEASE_DIR ${BIN_DIR}/release)
+set(TEST_DIR ${CMAKE_SOURCE_DIR}/tests)
 
-# Create binary directory if it doesn't exist
+# Crear directorio de salida si no existe
 file(MAKE_DIRECTORY ${BIN_DIR})
 
-# Add subdirectories
+# Incluir subdirectorio de la librería
 add_subdirectory(${SRC_DIR})
-add_subdirectory(${TESTS_DIR})
 
-# Clean target
-add_custom_target(clean_all
-    COMMAND ${CMAKE_COMMAND} -E remove -f ${BIN_DIR}/*.o ${BIN_DIR}/httpserver
-    COMMENT "Cleaning up..."
-)
+# Agregar el ejecutable principal
+add_executable(httpserver ${CMAKE_SOURCE_DIR}/app.cpp)
+
+# Incluir el directorio de cabeceras
+target_include_directories(httpserver PUBLIC ${SRC_DIR})
+
+# Linkear el ejecutable con la librería
+target_link_libraries(httpserver httpserver_lib)
+
+# Incluir subdirectorio de tests
+if (EXISTS ${TEST_DIR})
+    enable_testing()
+    add_subdirectory(${TEST_DIR})
+endif()
