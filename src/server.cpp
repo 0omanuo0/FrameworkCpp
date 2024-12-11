@@ -276,26 +276,27 @@ std::variant<std::string, int>& HttpServer::operator[](const std::string& key) {
 }
 
 
-void HttpServer::addRoute(const string &path, types::FunctionHandler handler, vector<string> methods)
+void HttpServer::addRoute(const string &path, types::FunctionHandler handler, vector<string> methods, bool cache_route)
 {
-    this->routes.push_back({path, methods, [handler](Request &args)
+    this->routes.push_back({path, methods, cache_route, [handler](Request &args)
                       {
                           return handler(args); // Call the original handler with the query and method
                       }});
 }
-void HttpServer::addRouteFile(const string &endpoint, const string &extension)
+void HttpServer::addRouteFile(string endpoint, const string &extension)
 {
+    // if the route dont start with / add it
+    if(endpoint[0] != '/') endpoint = "/" + endpoint;
+
+    // if exists
     for(auto &route : routesFile)
         if(route.path == endpoint)
             return;
-    try
-    {
-        this->routesFile.push_back({endpoint, content_type.find(extension)->second});
-    }
-    catch(const std::exception& e)
-    {
-        this->routesFile.push_back({endpoint, "application/force-download"});
-    }   
+
+    auto it = content_type.find(extension);
+    std::string contentType = (it != content_type.end()) ? it->second : "application/force-download";
+
+    this->routesFile.push_back({endpoint, contentType});
 }
 void HttpServer::urlfor(const string &endpoint)
 {
