@@ -285,10 +285,27 @@ int HttpServer::__handle_request(int socket, SSL *ssl)
     if (indexRoute != -1)
     {
         Request arg = Request(url_params, socket, ssl, http_headers, session, http_headers.getRequest());
-        auto responseHandler = routes[indexRoute].handler(arg);
+        auto route = routes[indexRoute];
+        // if the route is allowed to be cached and the types::HttpResponse cache_response is empty (typedef variant<std::string, Response> HttpResponse;)
+        types::HttpResponse responseHandler = route.cache_response;
+        bool is_empty_cache = true;
+        // 1. check each variant to make sure are not empty
+        if (route.cache_route)
+        {
+            if (responseHandler.index() == 0)
+                is_empty_cache = std::get<std::string>(responseHandler).empty();
+            else if (responseHandler.index() == 1)
+                is_empty_cache = std::get<Response>(responseHandler).isEmpty();
+
+            responseHandler = route.handler(arg);
+            routes[indexRoute].cache_response = responseHandler;
+        }
+        else
+            responseHandler = route.handler(arg);
+
         Response response = std::holds_alternative<string>(responseHandler)
-                                ? Response(std::get<string>(responseHandler))
-                                : std::get<Response>(responseHandler);
+                    ? Response(std::get<string>(responseHandler))
+                    : std::get<Response>(responseHandler);
 
         if (session.deleted)
             this->sessions.erase(this->sessions.begin() + session_index);
