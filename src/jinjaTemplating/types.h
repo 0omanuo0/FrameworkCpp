@@ -14,7 +14,7 @@
 #include <execinfo.h>
 #include <dlfcn.h>
 #include <cxxabi.h>
-#include "json.hpp"
+#include "my_expr/my_expr/my_expr.h"
 
 enum class BlockType
 {
@@ -52,6 +52,19 @@ struct Block
     std::vector<std::string> content = {};
     std::vector<SubBlock> subBlocks = {};
     std::vector<Block> children = {};
+    expr compiledExpression = expr("");
+    Block& operator=(const Block& other) {
+        if (this != &other) {
+            type = other.type;
+            expression = other.expression;
+            indexToPlace = other.indexToPlace;
+            content = other.content;
+            subBlocks = other.subBlocks;
+            children = other.children; // Perform a deep copy of children
+            compiledExpression = other.compiledExpression;
+        }
+        return *this;
+    }
 };
 
 struct SubBlock
@@ -60,6 +73,7 @@ struct SubBlock
     std::string expression = "";
     std::vector<std::string> content = {};
     std::vector<Block> children = {};
+    expr compiledExpression = expr("");
 };
 
 struct CachedFile
