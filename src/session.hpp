@@ -1,6 +1,6 @@
 #pragma once
 
-#include "tools/idGenerator.h"
+#include "tools/idGenerator.hpp"
 #include <string.h>
 #include <unordered_map>
 #include <vector>
@@ -64,37 +64,30 @@ public:
         result += "}";
         return result;
     }
-
+    
     static string IDfromJWT(const string &jwt)
     {
         vector<string> parts = splitString(jwt, '.');
-        if (parts.size() < 2)
-            return "";
-
-        if(parts[1].empty())
-            return "";
+        if (parts.size() != 3) return "";
+    
         if (parts[1].size() % 4 != 0)
-            parts[1].append(4 - parts[1].size() % 4, '.');
-        // decode
+            parts[1].append(4 - parts[1].size() % 4, '=');
+    
         string decoded = UrlEncoding::decodeURIbase64(parts[1]);
-        
-        // delete keys: {}
-        decoded.erase(0, 1);
-        decoded.pop_back();
-        vector<string> data = splitString(decoded, ',');
-        for (auto &i : data)
-        {
-            vector<string> pair = splitString(i, ':');
-            if (pair[0] == "\"id\"")
-            {
-                // remove quotes
-                pair[1].erase(0, 1);
-                pair[1].pop_back();
-                return pair[1];
-            }
+        if (decoded.empty()) return "";
+    
+        try {
+            auto jsonPayload = nlohmann::json::parse(decoded);
+            if (jsonPayload.contains("id"))
+                return jsonPayload["id"].get<string>();
+        } catch (const nlohmann::json::exception &e) {
+            // Handle JSON parsing errors
+            return "";
         }
+    
         return "";
     }
+
 
     Session() { string(idGenerator::generateUUID()); }
     // constructo gets id_f as string and needs to be converted to char*

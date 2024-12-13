@@ -18,7 +18,7 @@
 #include "tools.h"
 
 // #include "tinyexpr.h"
-#include "../server.h"
+#include "../server.hpp"
 
 class HttpServer;
 

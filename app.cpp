@@ -3,8 +3,6 @@
 #include "src/usersdb.h"
 #include "src/curl.h"
 
-
-
 using json = nlohmann::json;
 using namespace std;
 
@@ -14,7 +12,7 @@ CurlHandler curl;
 
 string HTTPScontext[] = {"secrets/cert.pem", "secrets/key.pem"};
 
-HttpServer server(PORT,  "172.30.50.94");
+HttpServer server(PORT, "10.1.1.105");
 UsersDB DATABASE("secrets/users.db");
 
 types::HttpResponse showApiData(Request &req)
@@ -46,8 +44,7 @@ types::HttpResponse apiHome(Request &req)
 {
     std::string url = "https://api.open-meteo.com/v1/forecast?latitude=52.52&longitude=13.41&hourly=temperature_2m";
     std::vector<std::string> headers = {
-        "Content-Type: application/json"
-    };
+        "Content-Type: application/json"};
 
     std::string response = curl.get(url, headers);
 
@@ -71,7 +68,7 @@ types::HttpResponse home(Request &req)
                 {
                     unordered_map post1 = DATABASE["POSTS"].getByID(to_string(i));
                     // {post1["autor"]}, post1["contenido"]
-                    json p = { {"user", post1["autor"]}, {"post", post1["contenido"]} };
+                    json p = {{"user", post1["autor"]}, {"post", post1["contenido"]}};
                     POSTS.push_back(p);
                 }
             }
@@ -95,7 +92,7 @@ types::HttpResponse home(Request &req)
                 for (size_t i = 1; i <= DATABASE["POSTS"].countRows(); i++)
                 {
                     unordered_map post1 = DATABASE["POSTS"].getByID(to_string(i));
-                    json p = { {"user", post1["autor"]}, {"post", post1["contenido"]} };
+                    json p = {{"user", post1["autor"]}, {"post", post1["contenido"]}};
                     POSTS.push_back(p);
                 }
             }
@@ -110,6 +107,7 @@ types::HttpResponse home(Request &req)
         else
             return server.Render("templates/home.html");
     }
+    return server.NotFound();
 }
 
 types::HttpResponse user_account(Request &req)
@@ -129,7 +127,7 @@ types::HttpResponse login(Request &req)
 {
     if (req.method == GET)
     {
-        if (req.session["logged"] == "true" )
+        if (req.session["logged"] == "true")
             return server.Redirect("/");
         return server.Render("templates/login.html");
     }
@@ -140,7 +138,7 @@ types::HttpResponse login(Request &req)
         {
             vector<string> user = DATABASE.getUser(req.form["fname"]);
 
-            if(user.size() == 0)
+            if (user.size() == 0)
                 return server.Render("templates/login.html", {{"error", "true"}});
 
             if (crypto_lib::calculateSHA512(req.form["fpass"]) == user[2] && req.form["fname"] == user[1])
@@ -162,9 +160,20 @@ types::HttpResponse login(Request &req)
 
 types::HttpResponse logout(Request &req)
 {
-    if (req.session["logged"] == "true" )
+    if (req.session["logged"] == "true")
         req.session.destroySession();
     return server.Redirect("/login");
+}
+
+types::HttpResponse portfolio(Request &req)
+{
+    // get data from static/content/proj.json
+    std::ifstream file("static/content/proj.json");
+    if (!file.is_open())
+        return server.NotFound();
+    std::string data((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    nlohmann::json json_data = nlohmann::json::parse(data);
+    return server.Render(std::string("templates/portfolio.html"), json_data);
 }
 
 int main(int argc, char **argv)
@@ -202,6 +211,8 @@ int main(int argc, char **argv)
     server.addRoute("/login", login, {GET, POST});
     server.addRoute("/logout", logout, {GET});
     server.addRoute("/image/<id>", images, {GET});
+
+    server.addRoute("/portfolio", portfolio, {GET}, false);
 
     server.startListener();
 }
