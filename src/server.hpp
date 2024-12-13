@@ -1,3 +1,6 @@
+#ifndef SERVER_H
+#define SERVER_H
+
 #include <uvw.hpp>
 #include <thread>
 #include <queue>
@@ -20,6 +23,9 @@
 #include "session.hpp"
 #include "response.hpp"
 #include "request.hpp"
+#include "jinjaTemplating/templating.h"
+
+class Templating;
 
 namespace server_types{
     const std::map<std::string, std::string> content_type = {
@@ -88,8 +94,6 @@ namespace server_types{
 }
 
 
-
-
 class HttpServer
 {
 private:
@@ -112,9 +116,9 @@ private:
     SSL_CTX *ctx_ = nullptr;
     std::string ssl_context_[2];
 
-    // server adons
-    logging logger_;
+    // server modules
     idGenerator idGeneratorJWT = idGenerator("");
+    std::shared_ptr<Templating> template_render;
     
     // server routes, files and sessions
     std::vector<server_types::Route> routes;
@@ -130,22 +134,43 @@ private:
     Session _set_new_session(Session session);
 
 public:
-    // server defaults
+    // server modules pub
     server_types::HttpServerDefaults defaults;
+    logging logger_;
 
-    HttpServer(std::string ip, int port, std::string ssl_context[])
-    : ip_(ip),
-      port_(port),
-      taskQueue_(),
-      workerPool_(4, taskQueue_)
-      {
-          ssl_context_[0] = ssl_context[0];
-          ssl_context_[1] = ssl_context[1];
-      }
+    HttpServer(const std::string &ip, int port, const std::string ssl_context[]);
     HttpServer() : HttpServer("127.0.0.1", 5000, std::array<std::string, 2>{std::string(""), std::string("")}.data()) {}
 
     void addRoute(const std::string &path, const std::vector<std::string> &methods, const server_types::FunctionHandler &handler)
         { this->routes.push_back({path, methods, false, [handler](Request& req) -> server_types::HttpResponse { return handler(req); }}); }
 
+    void addRouteFile(string endpoint, const string &extension)
+    {
+        // if the route dont start with / add it
+        if(endpoint[0] != '/') endpoint = "/" + endpoint;
+
+        // if exists
+        for(auto &route : routesFile)
+            if(route.path == endpoint)
+                return;
+
+        auto it = server_types::content_type.find(extension);
+        std::string contentType = (it != server_types::content_type.end()) ? it->second : "application/force-download";
+
+        this->routesFile.push_back({endpoint, contentType});
+    }
+
     void run();
+
+    std::string Render(const std::string &route, nlohmann::json data = nlohmann::json());
+
+    void urlfor(const std::string &path){
+        size_t index = path.find_last_of(".");
+        string extension = "txt";
+        if (string::npos != index)
+            extension = path.substr(index + 1);
+        addRouteFile(path, extension);
+    }
 };
+
+#endif
