@@ -1,6 +1,7 @@
 
 #include "server.hpp"
 #include "tools/complementary_server_functions.hpp"
+#include "jinjaTemplating/templating.h"
 
 int HttpServer::_find_match_session(std::string id)
 {
@@ -35,17 +36,30 @@ void HttpServer::_setup_server()
     configureOpenSSL(this->ctx_, this->ssl_context_[0].c_str(), this->ssl_context_[1].c_str());
 }
 
+HttpServer::HttpServer(const std::string &ip, int port, const std::string ssl_context[])
+    : workerPool_(4, taskQueue_)
+{
+    this->ip_ = ip;
+    this->port_ = port;
+    ssl_context_[0] = ssl_context[0];
+    ssl_context_[1] = ssl_context[1];
+    this->template_render = std::make_shared<Templating>();
+    this->template_render->server = this;
+}
 
 void _send_response(std::shared_ptr<SSLClient> sslClient, const std::string &response)
 {
-    auto responseData = std::make_unique<char[]>(response.size());
+    std::unique_ptr<char[]> responseData(new char[response.size()]);
     memcpy(responseData.get(), response.data(), response.size());
     sslClient->write(std::move(responseData), response.size());
 }
 
 int _send_file(std::shared_ptr<SSLClient> sslClient, const std::string &path, const std::string &type)
 {
-    std::ifstream file(path, std::ios::binary);
+    auto realpath = path;
+    if (realpath[0] == '/')
+        realpath = realpath.substr(1);
+    std::ifstream file(realpath, std::ios::binary);
     Response response_serv("", 200);
 
     if (!file.is_open() && !file.good()) // not open or not good (probably not found)
@@ -55,23 +69,24 @@ int _send_file(std::shared_ptr<SSLClient> sslClient, const std::string &path, co
     auto file_size = file.tellg();
     file.seekg(0, std::ios::beg);
 
-    char *buffer = new char[file_size];
-    if(!file.read(buffer, file_size)) // error reading the file
+    std::unique_ptr<char[]> buffer(new char[file_size]);
+    if(!file.read(buffer.get(), file_size)) // error reading the file
     {
-        delete[] buffer;
+        
         return -1;
     }
 
     response_serv.addHeader("Content-Type", type);
-    response_serv.addHeader("Content-Disposition", "attachment; filename=\"" + path.substr(path.find_last_of("/") + 1) + "\"");
+    response_serv.addHeader("Content-Disposition", "attachment; filename=\"" + realpath.substr(realpath.find_last_of("/") + 1) + "\"");
     response_serv.setIsFile(type, file_size);
 
     std::string response = response_serv.generateResponse();
-    response += std::string(buffer, file_size);
+    response += std::string(buffer.get(), file_size);
+
+    file.close();
 
     _send_response(sslClient, response);
 
-    delete[] buffer;
     return 0;
 }
 
@@ -91,7 +106,7 @@ int HttpServer::_handle_request(std::string request, std::shared_ptr<SSLClient> 
         Request req(s);
         Response response_server = this->defaults.getUnauthorized(req);
         _send_response(sslClient, response_server.generateResponse());
-        
+
         this->logger_.log(http_headers.getMethod() + " " + http_headers.getRoute() + " " + http_headers.getQuery() + ", Session expired", "401");
 
         return 0;
@@ -122,11 +137,12 @@ int HttpServer::_handle_request(std::string request, std::shared_ptr<SSLClient> 
 
     if (index_route != -1)
     {
-        this->taskQueue_.push([sslClient, this, index_route, &session, session_index, url_params, headers=std::move(http_headers)]() {
+        this->taskQueue_.push([sslClient, this, index_route, session, session_index, url_params, headers=std::move(http_headers)]() {
             // create a copy of the headers because is a const
             auto headers2 = headers;
+            auto session_mut = session;
             
-            Request arg = Request(url_params, headers2, session, headers2.getRequest());
+            Request arg = Request(url_params, headers2, session_mut, headers2.getRequest());
             auto route = this->routes[index_route];
             server_types::HttpResponse responseHandler;
             try
@@ -149,23 +165,23 @@ int HttpServer::_handle_request(std::string request, std::shared_ptr<SSLClient> 
                                     ? Response(std::get<string>(responseHandler))
                                     : std::get<Response>(responseHandler);
 
-            if (session.deleted)
+            if (session_mut.deleted)
                 this->sessions.erase(this->sessions.begin() + session_index);
             else if (session_index == -1)
-                this->_set_new_session(session);
+                this->_set_new_session(session_mut);
             else if (session_index != -1)
-                this->sessions[session_index] = session;
+                this->sessions[session_index] = session_mut;
 
-            response.addSessionCookie(this->default_session_name, this->idGeneratorJWT.generateJWT(session.toString()));
+            response.addSessionCookie(this->default_session_name, this->idGeneratorJWT.generateJWT(session_mut.toString()));
 
             auto resCode = std::to_string(response.getResponseCode());
             this->logger_.log(headers2.getMethod() + " " + headers2.getRoute() + " " + headers2.getQuery(), resCode);
 
             std::string responseStr = response.generateResponse();
 
-            auto responseData = std::make_unique<char[]>(responseStr.size());
-            memcpy(responseData.get(), responseStr.data(), responseStr.size());
-            sslClient->write(std::move(responseData), responseStr.size());
+            _send_response(sslClient, responseStr);
+
+            return 0;
         });
 
         return 0;
@@ -190,7 +206,7 @@ int HttpServer::_handle_request(std::string request, std::shared_ptr<SSLClient> 
                 _send_response(sslClient, response.generateResponse());
                 this->logger_.log(http_headers.getMethod() + " " + http_headers.getRoute() + " " + http_headers.getQuery(), "500");
             }
-            
+            this->logger_.log(http_headers.getMethod() + " " + http_headers.getRoute() + " " + http_headers.getQuery(), "200");
             return 0;
         }
     }
@@ -262,4 +278,9 @@ void HttpServer::run()
             SSL_CTX_free(this->ctx_);
         }
     }
+}
+
+std::string HttpServer::Render(const std::string &route, nlohmann::json data)
+{
+    return this->template_render->Render(route, data);
 }
