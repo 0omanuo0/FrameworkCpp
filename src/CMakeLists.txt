@@ -8,7 +8,7 @@ add_library(httpserver_lib STATIC ${LIB_SOURCES})
 include_directories(${CMAKE_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/jinjaTemplating ${CMAKE_SOURCE_DIR}/tools)
 
 # Añadir subdirectorio de my_expr
-# add_subdirectory(jinjaTemplating/my_expr)
+add_subdirectory(jinjaTemplating/my_expr)
 
 
 
@@ -23,12 +23,12 @@ include_directories(${LIBUV_INCLUDE_DIRS})
 add_subdirectory(uvw)
 
 # Linkea la biblioteca externa requerida
-target_link_libraries(httpserver_lib ssl crypto sqlite3 curl stdc++fs dl uvw) #my_expr_lib
+target_link_libraries(httpserver_lib my_expr_lib ssl crypto sqlite3 curl stdc++fs dl uvw)
 
 # Opciones de compilación para la librería
 target_compile_options(httpserver_lib PRIVATE
     $<$<CONFIG:Debug>:-Wall -g -Og -O0 -DDEBUG>
-    $<$<CONFIG:Release>:-O3>
+    $<$<CONFIG:Release>:-O3 -g>
 )
 
 # Incluye directorios de cabeceras
