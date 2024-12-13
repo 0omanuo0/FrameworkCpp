@@ -7,7 +7,7 @@ files/
 bin/
 release/
 static/
-uvw/
+# uvw/
 
 *.pem
 

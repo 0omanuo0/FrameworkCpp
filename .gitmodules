@@ -6,4 +6,4 @@
 [submodule "src/uvw"]
 	path = src/uvw
 	url = https://github.com/skypjack/uvw
-	branch = main
+	branch = 2.12.1_libuv1.44
