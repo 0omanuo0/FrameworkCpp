@@ -64,12 +64,12 @@ std::string Templating::Render(const std::string &file, const nlohmann::json &da
     }
     catch (const Templating_ParserError &e)
     {
-        this->server->logger.error(e.what());
+        this->server->logger_.error(e.what());
         return "";
     }
     catch (const Templating_RenderError &e)
     {
-        this->server->logger.error(e.what());
+        this->server->logger_.error(e.what());
         auto data_ = e.getData();
         if (data_.is_null())
             data_ = data;
@@ -78,7 +78,7 @@ std::string Templating::Render(const std::string &file, const nlohmann::json &da
     }
     catch (const std::exception &e)
     {
-        this->server->logger.error(e.what());
+        this->server->logger_.error(e.what());
         return "";
     }
 }
@@ -135,7 +135,7 @@ std::vector<int> Templating::findChildren(Block block, int lineN)
 std::string Templating::__Render(Block block, nlohmann::json &data)
 {
     std::string result = "";
-    int size = block.content.size() + block.children.size();
+    size_t size = block.content.size() + block.children.size();
 
     for (size_t lineN = 0; lineN < size; lineN++)
     {
@@ -218,6 +218,7 @@ std::string Templating::__renderIfBlock(Block &ifBlock, nlohmann::json &data)
 
 std::string Templating::__renderForBlock(Block &forBlock, nlohmann::json &data)
 {
+    // std::cout << "data: " << data.dump() << std::endl;
     std::string result = "";
     std::string expression = forBlock.expression;
     std::string value = expression.substr(0, expression.find(" in "));
@@ -362,7 +363,7 @@ Block Templating::BlockParser(std::istream &stream, Block parent)
                 subBlock.type = SubBlockType::ELSE;
                 block.subBlocks.push_back(subBlock);
             }
-            else if (std::regex_search(statement, match, endif_pattern) && block.type == BlockType::IF || std::regex_search(statement, match, endfor_pattern) && block.type == BlockType::FOR)
+            else if ((std::regex_search(statement, match, endif_pattern) && block.type == BlockType::IF) || (std::regex_search(statement, match, endfor_pattern) && block.type == BlockType::FOR))
                 return block;
             else
                 throw Templating_ParserError("Invalid statement: " + statement, block);

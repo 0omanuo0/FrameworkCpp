@@ -2,3 +2,8 @@
 	path = src/jinjaTemplating/my_expr
 	url = https://github.com/0omanuo0/my_expr
 	branch = master
+
+[submodule "src/uvw"]
+	path = src/uvw
+	url = https://github.com/skypjack/uvw
+	branch = 2.12.1_libuv1.44

@@ -12,8 +12,8 @@
 #include <random>
 #include <ctime>
 #include <sstream>
-#include "url_encoding.h"
-#include "base64.h"
+#include "url_encoding.hpp"
+#include "base64.hpp"
 #include <iostream>
 
 namespace uuid

@@ -1,4 +1,4 @@
-#include "httpMethods.h"
+#include "httpMethods.hpp"
 
 
 
@@ -129,7 +129,7 @@ void httpHeaders::__loadParams(const std::string &request)
         auto a = this->Headers["Content-Type"].get<std::string>();
 
         Content contentBody(input, a);
-        this->body = contentBody;
+        this->body = std::move(contentBody);
     }
     this->cookies = this->Headers["Cookie"].get<std::map<std::string, std::string>>();
 }
@@ -180,3 +180,4 @@ header httpHeaders::operator[](const std::string &key)
         return header(this->query);
     return this->Headers[key];
 }
+

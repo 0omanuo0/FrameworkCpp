@@ -1,324 +1,286 @@
-#include "server.h"
+
+#include "server.hpp"
+#include "tools/complementary_server_functions.hpp"
 #include "jinjaTemplating/templating.h"
 
-HttpServer::HttpServer()
+int HttpServer::_find_match_session(std::string id)
 {
-    template_render->server = this;
+    for (int i = 0; i < (int)sessions.size(); i++)
+        if (sessions[i].getId() == id)
+            return i; // Devuelve la posición en el vector
+    
+    return -1; // Retorna -1 si no se encuentra la sesión
 }
 
-struct in_addr hostnameToIp(const char *hostname)
-{
-    struct hostent *hostInfo = gethostbyname(hostname);
-    struct in_addr addr;
+Session HttpServer::_get_session(int index){
+    if (index >= 0 && index < (int)sessions.size())
+        return sessions[index]; // Devuelve la sesión correspondiente al índice
+    else{
+        auto id = string(idGenerator::generateUUID());
+        return Session(id); // Devuelve una sesión vacía si el número está fuera de rango
+    }
+        
+}
 
-    if (hostInfo == nullptr)
+Session HttpServer::_set_new_session(Session session){
+    this->sessions.push_back(session);
+    return session;
+}
+
+void HttpServer::_setup_server()
+{
+    this->loop_ = uvw::Loop::getDefault();
+    this->server_ = loop_->resource<uvw::TCPHandle>();
+    this->server_->bind(this->ip_, this->port_);
+
+    configureOpenSSL(this->ctx_, this->ssl_context_[0].c_str(), this->ssl_context_[1].c_str());
+}
+
+HttpServer::HttpServer(const std::string &ip, int port, const std::string ssl_context[])
+    : workerPool_(4, taskQueue_)
+{
+    this->ip_ = ip;
+    this->port_ = port;
+    ssl_context_[0] = ssl_context[0];
+    ssl_context_[1] = ssl_context[1];
+    this->template_render = std::make_shared<Templating>();
+    this->template_render->server = this;
+}
+
+void _send_response(std::shared_ptr<SSLClient> sslClient, const std::string &response)
+{
+    std::unique_ptr<char[]> responseData(new char[response.size()]);
+    memcpy(responseData.get(), response.data(), response.size());
+    sslClient->write(std::move(responseData), response.size());
+}
+
+int _send_file(std::shared_ptr<SSLClient> sslClient, const std::string &path, const std::string &type)
+{
+    auto realpath = path;
+    if (realpath[0] == '/')
+        realpath = realpath.substr(1);
+    std::ifstream file(realpath, std::ios::binary);
+    Response response_serv("", 200);
+
+    if (!file.is_open() && !file.good()) // not open or not good (probably not found)
+        return -1;
+
+    file.seekg(0, std::ios::end);
+    auto file_size = file.tellg();
+    file.seekg(0, std::ios::beg);
+
+    std::unique_ptr<char[]> buffer(new char[file_size]);
+    if(!file.read(buffer.get(), file_size)) // error reading the file
     {
-        throw runtime_error("Error: Unable to resolve hostname.");
-        // You might want to handle the error more gracefully
-        exit(1);
+        
+        return -1;
     }
 
-    addr.s_addr = *(reinterpret_cast<unsigned long *>(hostInfo->h_addr));
-    return addr;
-}
+    response_serv.addHeader("Content-Type", type);
+    response_serv.addHeader("Content-Disposition", "attachment; filename=\"" + realpath.substr(realpath.find_last_of("/") + 1) + "\"");
+    response_serv.setIsFile(type, file_size);
 
-HttpServer::HttpServer(int port_server, char *hostname)
-    : port(port_server)
-{
-    host = hostname;
-    // Convierte la dirección IP en formato de cadena a representación binaria
-    ip_host_struct = hostnameToIp(host);
+    std::string response = response_serv.generateResponse();
+    response += std::string(buffer.get(), file_size);
 
-    template_render = new Templating();
-    template_render->server = this;
-}
-HttpServer::HttpServer(int port_server, const string SSLcontext_server[], char *hostname )
-    : port(port_server)
-{
-    host = hostname;
-    // Convierte la dirección IP en formato de cadena a representación binaria
-    ip_host_struct = hostnameToIp(host);
-    context.certificate = SSLcontext_server[0];
-    context.private_key = SSLcontext_server[1];
-    HTTPS = true;
+    file.close();
 
-    template_render = new Templating();
-    template_render->server = this;
-}
+    _send_response(sslClient, response);
 
-// string HttpServer::Render(const string &route, map<string, string> data)
-// {
-//     return template_render->Render(route, data);
-// };
-
-string HttpServer::Render(const string &route, nlohmann::json data)
-{
-    return template_render->Render(route, data);
-};
-
-string HttpServer::Render(const string &route, const string &data)
-{
-    return template_render->Render(route, data);
-};
-
-string HttpServer::RenderString(const string &route, nlohmann::json data)
-{
-    return template_render->RenderString(route, data);
-};
-
-void HttpServer::__startListenerSSL()
-{
-    vector<thread> threads;
-
-    while (true)
-    {
-        // Aceptar una conexión entrante
-        sockaddr_in clientAddress;
-        socklen_t clientAddressSize = sizeof(clientAddress);
-
-        int clientSocket = accept(serverSocket, reinterpret_cast<sockaddr *>(&clientAddress), &clientAddressSize);
-        if (clientSocket == -1)
-        {
-            cerr << "Error al aceptar la conexión entrante" << endl;
-            continue;
-        }
-
-        // Crear el objeto SSL
-        SSL *ssl = SSL_new(ssl_ctx);
-        // Asociar el socket con el objeto SSL
-        SSL_set_fd(ssl, clientSocket);
-        // Establecer la conexión SSL
-        if (SSL_accept(ssl) <= 0)
-        {
-            cerr << "Error al establecer la conexión SSL." << endl;
-            SSL_free(ssl);
-            close(clientSocket);
-            continue;
-        }
-
-        // Crear un hilo para manejar la comunicación con el cliente
-        thread thread(&HttpServer::__handle_request, this, move(clientSocket), move(ssl));
-        threads.push_back(move(thread));
-        // Eliminar hilos terminados
-        threads.erase(remove_if(threads.begin(), threads.end(), [](const std::thread &t)
-                                { return !t.joinable(); }),
-                      threads.end());
-    }
-}
-
-
-void HttpServer::__startListener()
-{
-    vector<thread> threads;
-
-    while (true)
-    {
-        // Aceptar una conexión entrante
-        sockaddr_in clientAddress;
-        socklen_t clientAddressSize = sizeof(clientAddress);
-
-        int clientSocket = accept(serverSocket, reinterpret_cast<sockaddr *>(&clientAddress), &clientAddressSize);
-        if (clientSocket == -1)
-        {
-            cerr << "Error al aceptar la conexión entrante" << endl;
-            continue;
-        }
-
-        // Crear un hilo para manejar la comunicación con el cliente
-        SSL *ssl = NULL;
-        thread thread(&HttpServer::__handle_request, this, move(clientSocket), move(ssl));
-        threads.push_back(move(thread));
-        // Eliminar hilos terminados
-        threads.erase(remove_if(threads.begin(), threads.end(), [](const std::thread &t)
-                                { return !t.joinable(); }),
-                      threads.end());
-    }
-}
-
-
-void HttpServer::startListener()
-{
-    if (this->__setup() != 0) throw std::runtime_error("Error: setup failed");
-
-    if (HTTPS)
-        this->__startListenerSSL();
-    else
-        this->__startListener();
-}
-
-void HttpServer::setEnv(const std::string &envPath)
-{
-    this->envPath = envPath;
-}
-
-int HttpServer::__loadEnv()
-{
-    // check if exists envPath
-    if (!filesystem::exists(envPath))
-    {
-        // display that .env not exists so is using default values
-        logger.warning("The .env file does not exist, using default values");
-        return 1;
-    }
-    logger.log("Loading environment variables from .env file");
-
-    std::ifstream file(envPath);
-    if (!file.is_open())return 2;
-
-    std::string line;
-    while (std::getline(file, line))
-    {
-        std::istringstream is_line(line);
-        std::string key;
-        if(line[0] == '#') continue;
-
-        if (std::getline(is_line, key, '='))
-        {
-            std::string value;
-            if (std::getline(is_line, value)) this->data_[key] = value;
-        }
-    }
     return 0;
 }
 
-int HttpServer::__setup()
+
+int HttpServer::_handle_request(std::string request, std::shared_ptr<SSLClient> sslClient)
 {
-    if (this->__loadEnv() > 1) throw std::runtime_error("Error: loadEnv failed");
-    // Configurar el servidor
-    for (auto &data : data_)
+    httpHeaders http_headers(UrlEncoding::decodeURIComponent(request));
+
+    auto session_id = Session::IDfromJWT(http_headers.cookies[this->default_session_name]);
+    int session_index = this->_find_match_session(session_id);
+
+    Session session = this->_get_session(session_index);
+
+    if (!idGeneratorJWT.verifyJWT(http_headers.cookies[this->default_session_name]) && session_index != -1)
     {
-        if(data.first == "max_connections"){
-            if(std::holds_alternative<int>(data.second)) this->MAX_CONNECTIONS = std::get<int>(data.second);
-            else if(std::holds_alternative<std::string>(data.second)) this->MAX_CONNECTIONS = std::stoi(std::get<std::string>(data.second));
-            else throw std::runtime_error("Error: max_connections must be an integer");
-        }
-        else if(data.first == "secret_key"){
-            if(std::holds_alternative<std::string>(data.second)) this->idGeneratorJWT = idGenerator(std::get<std::string>(data.second));
-            else throw std::runtime_error("Error: secret_key must be a string");
-        }
-        else if(data.first == "default_session_name"){
-            if(std::holds_alternative<std::string>(data.second)) this->default_session_name = std::get<std::string>(data.second);
-            else throw std::runtime_error("Error: default_session_name must be a string");
-        }
-        else if(data.first == "not_found"){
-            if(std::holds_alternative<std::string>(data.second)) this->__default_not_found = std::get<std::string>(data.second);
-            else throw std::runtime_error("Error: not_found must be a string");
-        }
-        else if(data.first == "internal_server_error"){
-            if(std::holds_alternative<std::string>(data.second)) this->__default_internal_server_error = std::get<std::string>(data.second);
-            else throw std::runtime_error("Error: internal_server_error must be a string");
-        }
-        else if(data.first == "unauthorized"){
-            if(std::holds_alternative<std::string>(data.second)) this->__default_unauthorized = std::get<std::string>(data.second);
-            else throw std::runtime_error("Error: unauthorized must be a string");
-        }
-        else if(data.first == "bad_request")
+        auto s = Session();
+        Request req(s);
+        Response response_server = this->defaults.getUnauthorized(req);
+        _send_response(sslClient, response_server.generateResponse());
+
+        this->logger_.log(http_headers.getMethod() + " " + http_headers.getRoute() + " " + http_headers.getQuery() + ", Session expired", "401");
+
+        return 0;
+    }
+
+    // Find The route in the routes vector
+    int index_route = -1;
+
+    std::unordered_map<std::string, std::string> url_params;
+    for (size_t i = 0; i < (size_t)routes.size(); i++)
+    {
+        const auto &route = routes[i];
+        if (server_tools::_route_contains_params(route.path))
         {
-            if(std::holds_alternative<std::string>(data.second)) this->__default_bad_request = std::get<std::string>(data.second);
-            else throw std::runtime_error("Error: bad_request must be a string");
+            if (server_tools::_match_path_with_route(http_headers.getRoute(), route.path, url_params))
+            {
+                index_route = i;
+                break;
+            }
         }
-    }
-
-
-    if (HTTPS)
-    {
-        // Inicializar OpenSSL
-        SSL_library_init();
-        ssl_ctx = SSL_CTX_new(TLS_server_method());
-
-        // Cargar certificado y clave privada
-        if (SSL_CTX_use_certificate_file(ssl_ctx, context.certificate.c_str(), SSL_FILETYPE_PEM) <= 0 || !filesystem::exists(context.certificate))
+        else if (route.path == http_headers.getRoute())
         {
-            cerr << "Error al cargar el certificado." << endl;
-            return 1;
-        }
-        if (SSL_CTX_use_PrivateKey_file(ssl_ctx, context.private_key.c_str(), SSL_FILETYPE_PEM) <= 0 || !filesystem::exists(context.private_key))
-        {
-            cerr << "Error al cargar la clave privada." << endl;
-            return 1;
+            index_route = i;
+            break;
         }
     }
 
-    // Crear el socket del servidor
-    if ((serverSocket = socket(AF_INET, SOCK_STREAM, 0)) == 0)
+
+    if (index_route != -1)
     {
-        cerr << "Error al crear el socket" << endl;
-        return 1;
+        this->taskQueue_.push([sslClient, this, index_route, session, session_index, url_params, headers=std::move(http_headers)]() {
+            // create a copy of the headers because is a const
+            auto headers2 = headers;
+            auto session_mut = session;
+            
+            Request arg = Request(url_params, headers2, session_mut, headers2.getRequest());
+            auto route = this->routes[index_route];
+            server_types::HttpResponse responseHandler;
+            try
+            {
+                responseHandler = route.handler(arg);
+            }
+            catch (const std::exception &e)
+            {
+                this->logger_.error("Error while handling the request", e.what());
+                auto s = Session();
+                Request req(s);
+                Response response = this->defaults.getInternalServerError(req);
+                _send_response(sslClient, response.generateResponse()); 
+
+                this->logger_.log(headers2.getMethod() + " " + headers2.getRoute() + " " + headers2.getQuery(), "500");
+                return 0;
+            }
+
+            Response response = std::holds_alternative<string>(responseHandler)
+                                    ? Response(std::get<string>(responseHandler))
+                                    : std::get<Response>(responseHandler);
+
+            if (session_mut.deleted)
+                this->sessions.erase(this->sessions.begin() + session_index);
+            else if (session_index == -1)
+                this->_set_new_session(session_mut);
+            else if (session_index != -1)
+                this->sessions[session_index] = session_mut;
+
+            response.addSessionCookie(this->default_session_name, this->idGeneratorJWT.generateJWT(session_mut.toString()));
+
+            auto resCode = std::to_string(response.getResponseCode());
+            this->logger_.log(headers2.getMethod() + " " + headers2.getRoute() + " " + headers2.getQuery(), resCode);
+
+            std::string responseStr = response.generateResponse();
+
+            _send_response(sslClient, responseStr);
+
+            return 0;
+        });
+
+        return 0;
     }
 
-    // Configurar la estructura de la dirección del servidor
-    serverAddress.sin_family = AF_INET;
-    serverAddress.sin_addr.s_addr = INADDR_ANY; //////////////////////////////////////ARREGLAR
-    serverAddress.sin_port = htons(port);
+    for(const auto &route_file : this->routesFile){
+        if(route_file.path == http_headers.getRoute()){
 
-    // Enlazar el socket a la dirección y el puerto
-    if (bind(serverSocket, (struct sockaddr *)&serverAddress, sizeof(serverAddress)) != 0)
-    {
-        logger.error("Error while binding the socket");
-        return 1;
+            auto error = _send_file(sslClient, route_file.path, route_file.type);
+            
+            if(error == -1)
+            {
+                Request arg = Request(url_params, http_headers, session, http_headers.getRequest());
+                Response response = this->defaults.getNotFound(arg);
+                _send_response(sslClient, response.generateResponse());
+                this->logger_.log(http_headers.getMethod() + " " + http_headers.getRoute() + " " + http_headers.getQuery(), "404");
+            }
+            else if(error == -2)
+            {
+                Request arg = Request(url_params, http_headers, session, http_headers.getRequest());
+                Response response = this->defaults.getInternalServerError(arg);
+                _send_response(sslClient, response.generateResponse());
+                this->logger_.log(http_headers.getMethod() + " " + http_headers.getRoute() + " " + http_headers.getQuery(), "500");
+            }
+            this->logger_.log(http_headers.getMethod() + " " + http_headers.getRoute() + " " + http_headers.getQuery(), "200");
+            return 0;
+        }
     }
 
-    // Escuchar las conexiones entrantes
-    if (listen(serverSocket, MAX_CONNECTIONS) < 0)
-    {
-        logger.error("Error while listening for incoming connections");
-        return 1;
-    }
-    if(HTTPS)
-        cout << "Servidor https://" << host << ":" << port << " en ejecución " << endl;
-    else
-        cout << "Servidor http://" << host << ":" << port << " en ejecución " << endl;
+
+    // 404, error
+    Request arg = Request(url_params, http_headers, session, http_headers.getRequest());
+    Response response = this->defaults.getNotFound(arg);
+    _send_response(sslClient, response.generateResponse());
+    this->logger_.log(http_headers.getMethod() + " " + http_headers.getRoute() + " " + http_headers.getQuery(), "404");
+    
     return 0;
 }
 
-std::variant<std::string, int>& HttpServer::operator[](const std::string& key) {
-    return data_[key]; 
+void HttpServer::_run_server()
+{
+    this->server_->on<uvw::ListenEvent>([this](const uvw::ListenEvent &, uvw::TCPHandle &srv)
+    {
+        auto client = srv.loop().resource<uvw::TCPHandle>();
+        srv.accept(*client);
+        client->read();
+
+        auto sslClient = std::make_shared<SSLClient>(client, this->ctx_);
+
+        sslClient->onData([sslClient, this](const char *data, std::size_t length) {
+            std::string request(data, length);
+            this->_handle_request(request, sslClient);
+        });
+
+        sslClient->onClose([this]() {
+            this->logger_.log("Client disconnected");
+        });
+
+        client->on<uvw::ErrorEvent>([this](const uvw::ErrorEvent &event, uvw::TCPHandle &)
+            { this->logger_.error("Client error: " + std::string(event.what())); }); 
+    });
+
+    this->server_->on<uvw::ErrorEvent>([this](const uvw::ErrorEvent &event, uvw::TCPHandle &)
+        { this->logger_.error("Server error: " + std::string(event.what())); });
+
+    this->server_->listen();
+    this->logger_.log("Server is listening on " + this->ip_ + ":" + std::to_string(this->port_));
+    this->loop_->run();
+
+    SSL_CTX_free(this->ctx_);
+    EVP_cleanup();
 }
 
-
-void HttpServer::addRoute(const string &path, types::FunctionHandler handler, vector<string> methods, bool cache_route)
+void HttpServer::run()
 {
-    this->routes.push_back({path, methods, std::string(), cache_route, [handler](Request &args)
-                      {
-                          return handler(args); // Call the original handler with the query and method
-                      }});
-}
-void HttpServer::addRouteFile(string endpoint, const string &extension)
-{
-    // if the route dont start with / add it
-    if(endpoint[0] != '/') endpoint = "/" + endpoint;
+    try
+    {
+        this->_setup_server();
+    }
+    catch (const std::exception &ex)
+    {
+        this->logger_.error("Error: " + std::string(ex.what()));
+    }
 
-    // if exists
-    for(auto &route : routesFile)
-        if(route.path == endpoint)
-            return;
-
-    auto it = content_type.find(extension);
-    std::string contentType = (it != content_type.end()) ? it->second : "application/force-download";
-
-    this->routesFile.push_back({endpoint, contentType});
-}
-void HttpServer::urlfor(const string &endpoint)
-{
-    size_t index = endpoint.find_last_of(".");
-    string extension = "txt";
-    if (string::npos != index)
-        extension = endpoint.substr(index + 1);
-    addRouteFile(endpoint, extension);
+    try
+    {
+        this->_run_server();
+    }
+    catch (const std::exception &ex)
+    {
+        this->logger_.error("Error: " + std::string(ex.what()));
+        if (this->ctx_)
+        {
+            SSL_CTX_free(this->ctx_);
+        }
+    }
 }
 
-
-void HttpServer::setNotFound(const types::defaultFunctionHandler &handler)
+std::string HttpServer::Render(const std::string &route, nlohmann::json data)
 {
-    this->__not_found_handler = handler;
-}
-
-void HttpServer::setUnauthorized(const types::defaultFunctionHandler &handler)
-{
-    this->__unauthorized_handler = handler;
-}
-
-void HttpServer::setInternalServerError(const types::defaultFunctionHandler &handler)
-{
-    this->__internal_server_error_handler = handler;
+    return this->template_render->Render(route, data);
 }
