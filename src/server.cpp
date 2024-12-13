@@ -85,23 +85,19 @@ int HttpServer::_handle_request(std::string request, std::shared_ptr<SSLClient> 
 
     Session session = this->_get_session(session_index);
 
-    /////////////////////////////////////////////
-    // print the request method, route and query as [time] METHOD route query
-
-    // Buscar la ruta correspondiente en el std::vector de rutas
-
     if (!idGeneratorJWT.verifyJWT(http_headers.cookies[this->default_session_name]) && session_index != -1)
     {
         auto s = Session();
         Request req(s);
-        this->logger_.log("Session expired", session_id);
         Response response_server = this->defaults.getUnauthorized(req);
         _send_response(sslClient, response_server.generateResponse());
+        
+        this->logger_.log(http_headers.getMethod() + " " + http_headers.getRoute() + " " + http_headers.getQuery() + ", Session expired", "401");
+
         return 0;
     }
 
-
-
+    // Find The route in the routes vector
     int index_route = -1;
 
     std::unordered_map<std::string, std::string> url_params;
@@ -144,6 +140,9 @@ int HttpServer::_handle_request(std::string request, std::shared_ptr<SSLClient> 
                 Request req(s);
                 Response response = this->defaults.getInternalServerError(req);
                 _send_response(sslClient, response.generateResponse()); 
+
+                this->logger_.log(headers2.getMethod() + " " + headers2.getRoute() + " " + headers2.getQuery(), "500");
+                return 0;
             }
 
             Response response = std::holds_alternative<string>(responseHandler)
@@ -182,12 +181,14 @@ int HttpServer::_handle_request(std::string request, std::shared_ptr<SSLClient> 
                 Request arg = Request(url_params, http_headers, session, http_headers.getRequest());
                 Response response = this->defaults.getNotFound(arg);
                 _send_response(sslClient, response.generateResponse());
+                this->logger_.log(http_headers.getMethod() + " " + http_headers.getRoute() + " " + http_headers.getQuery(), "404");
             }
             else if(error == -2)
             {
                 Request arg = Request(url_params, http_headers, session, http_headers.getRequest());
                 Response response = this->defaults.getInternalServerError(arg);
                 _send_response(sslClient, response.generateResponse());
+                this->logger_.log(http_headers.getMethod() + " " + http_headers.getRoute() + " " + http_headers.getQuery(), "500");
             }
             
             return 0;
@@ -199,6 +200,7 @@ int HttpServer::_handle_request(std::string request, std::shared_ptr<SSLClient> 
     Request arg = Request(url_params, http_headers, session, http_headers.getRequest());
     Response response = this->defaults.getNotFound(arg);
     _send_response(sslClient, response.generateResponse());
+    this->logger_.log(http_headers.getMethod() + " " + http_headers.getRoute() + " " + http_headers.getQuery(), "404");
     
     return 0;
 }
