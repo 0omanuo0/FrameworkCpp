@@ -9,8 +9,6 @@
 #include <functional>
 #include <iostream>
 
-
-
 class SSLClient
 {
 public:
@@ -46,13 +44,16 @@ public:
 
     void write(std::unique_ptr<char[]> data, std::size_t length)
     {
+        if(!ssl)
+            return;
+        
         if (SSL_write(ssl, data.get(), static_cast<int>(length)) > 0)
         {
             flushPendingWrite();
         }
         else
         {
-            std::cerr << "SSL write error" << std::endl;
+            std::cerr << "SSL write error: " << SSL_get_error(ssl, -1) << std::endl;
             handle->close();
         }
     }
@@ -133,7 +134,7 @@ private:
 
     void processDecryptedData()
     {
-        char buffer[4096];
+        char buffer[65536]; // 64KB buffer
         int bytesRead = SSL_read(ssl, buffer, sizeof(buffer));
         if (bytesRead > 0)
         {
@@ -148,9 +149,13 @@ private:
 
     void flushPendingWrite()
     {
+        // Check that ssl and writeBIO are still valid
+        if (!ssl || !writeBIO)
+            return;
+
         while (BIO_ctrl_pending(writeBIO) > 0)
         {
-            char buffer[4096];
+            char buffer[65536]; // 64KB buffer
             int bytesToWrite = BIO_read(writeBIO, buffer, sizeof(buffer));
             if (bytesToWrite > 0)
             {
@@ -167,6 +172,14 @@ private:
         {
             closeCallback();
         }
+
+        if (ssl)
+        {
+            SSL_shutdown(ssl);
+            SSL_free(ssl);
+            ssl = nullptr;
+        }
+
         handle->close();
     }
 
