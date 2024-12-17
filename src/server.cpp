@@ -8,21 +8,23 @@ int HttpServer::_find_match_session(std::string id)
     for (int i = 0; i < (int)sessions.size(); i++)
         if (sessions[i].getId() == id)
             return i; // Devuelve la posición en el vector
-    
+
     return -1; // Retorna -1 si no se encuentra la sesión
 }
 
-Session HttpServer::_get_session(int index){
+Session HttpServer::_get_session(int index)
+{
     if (index >= 0 && index < (int)sessions.size())
         return sessions[index]; // Devuelve la sesión correspondiente al índice
-    else{
+    else
+    {
         auto id = string(idGenerator::generateUUID());
         return Session(id); // Devuelve una sesión vacía si el número está fuera de rango
     }
-        
 }
 
-Session HttpServer::_set_new_session(Session session){
+Session HttpServer::_set_new_session(Session session)
+{
     this->sessions.push_back(session);
     return session;
 }
@@ -56,6 +58,7 @@ void _send_response(std::shared_ptr<SSLClient> sslClient, const std::string &res
 
 int _send_file(std::shared_ptr<SSLClient> sslClient, const std::string &path, const std::string &type)
 {
+    // std::cout << "serving file: " << path << std::endl;
     auto realpath = path;
     if (realpath[0] == '/')
         realpath = realpath.substr(1);
@@ -70,9 +73,9 @@ int _send_file(std::shared_ptr<SSLClient> sslClient, const std::string &path, co
     file.seekg(0, std::ios::beg);
 
     std::unique_ptr<char[]> buffer(new char[file_size]);
-    if(!file.read(buffer.get(), file_size)) // error reading the file
+    if (!file.read(buffer.get(), file_size)) // error reading the file
     {
-        
+
         return -1;
     }
 
@@ -87,9 +90,10 @@ int _send_file(std::shared_ptr<SSLClient> sslClient, const std::string &path, co
 
     _send_response(sslClient, response);
 
+    // std::cout << "file served" << std::endl;
+
     return 0;
 }
-
 
 int HttpServer::_handle_request(std::string request, std::shared_ptr<SSLClient> sslClient)
 {
@@ -103,8 +107,7 @@ int HttpServer::_handle_request(std::string request, std::shared_ptr<SSLClient> 
     if (!idGeneratorJWT.verifyJWT(http_headers.cookies[this->default_session_name]) && session_index != -1)
     {
         auto s = Session();
-        Request req(s);
-        Response response_server = this->defaults.getUnauthorized(req);
+        Response response_server = this->defaults.getUnauthorized();
         _send_response(sslClient, response_server.generateResponse());
 
         this->logger_.log(http_headers.getMethod() + " " + http_headers.getRoute() + " " + http_headers.getQuery() + ", Session expired", "401");
@@ -134,10 +137,10 @@ int HttpServer::_handle_request(std::string request, std::shared_ptr<SSLClient> 
         }
     }
 
-
     if (index_route != -1)
     {
-        this->taskQueue_.push([sslClient, this, index_route, session, session_index, url_params, headers=std::move(http_headers)]() {
+        this->taskQueue_.push([sslClient, this, index_route, session, session_index, url_params, headers = std::move(http_headers)]()
+                              {
             // create a copy of the headers because is a const
             auto headers2 = headers;
             auto session_mut = session;
@@ -153,8 +156,7 @@ int HttpServer::_handle_request(std::string request, std::shared_ptr<SSLClient> 
             {
                 this->logger_.error("Error while handling the request", e.what());
                 auto s = Session();
-                Request req(s);
-                Response response = this->defaults.getInternalServerError(req);
+                Response response = this->defaults.getInternalServerError();
                 _send_response(sslClient, response.generateResponse()); 
 
                 this->logger_.log(headers2.getMethod() + " " + headers2.getRoute() + " " + headers2.getQuery(), "500");
@@ -174,35 +176,37 @@ int HttpServer::_handle_request(std::string request, std::shared_ptr<SSLClient> 
 
             response.addSessionCookie(this->default_session_name, this->idGeneratorJWT.generateJWT(session_mut.toString()));
 
-            auto resCode = std::to_string(response.getResponseCode());
-            this->logger_.log(headers2.getMethod() + " " + headers2.getRoute() + " " + headers2.getQuery(), resCode);
+            response.addHeader("Connection", "keep-alive");
+            response.addHeader("Keep-Alive", "timeout=5, max=100");
 
+            auto resCode = std::to_string(response.getResponseCode());
             std::string responseStr = response.generateResponse();
 
             _send_response(sslClient, responseStr);
-
-            return 0;
-        });
+            this->logger_.log(headers2.getMethod() + " " + headers2.getRoute() + " " + headers2.getQuery(), resCode);
+            return 0; });
 
         return 0;
     }
 
-    for(const auto &route_file : this->routesFile){
-        if(route_file.path == http_headers.getRoute()){
+    for (const auto &route_file : this->routesFile)
+    {
+        if (route_file.path == http_headers.getRoute())
+        {
 
             auto error = _send_file(sslClient, route_file.path, route_file.type);
-            
-            if(error == -1)
+
+            if (error == -1)
             {
                 Request arg = Request(url_params, http_headers, session, http_headers.getRequest());
-                Response response = this->defaults.getNotFound(arg);
+                Response response = this->defaults.getNotFound();
                 _send_response(sslClient, response.generateResponse());
                 this->logger_.log(http_headers.getMethod() + " " + http_headers.getRoute() + " " + http_headers.getQuery(), "404");
             }
-            else if(error == -2)
+            else if (error == -2)
             {
                 Request arg = Request(url_params, http_headers, session, http_headers.getRequest());
-                Response response = this->defaults.getInternalServerError(arg);
+                Response response = this->defaults.getInternalServerError();
                 _send_response(sslClient, response.generateResponse());
                 this->logger_.log(http_headers.getMethod() + " " + http_headers.getRoute() + " " + http_headers.getQuery(), "500");
             }
@@ -211,33 +215,36 @@ int HttpServer::_handle_request(std::string request, std::shared_ptr<SSLClient> 
         }
     }
 
-
     // 404, error
     Request arg = Request(url_params, http_headers, session, http_headers.getRequest());
-    Response response = this->defaults.getNotFound(arg);
+    Response response = this->defaults.getNotFound();
     _send_response(sslClient, response.generateResponse());
     this->logger_.log(http_headers.getMethod() + " " + http_headers.getRoute() + " " + http_headers.getQuery(), "404");
-    
+
     return 0;
 }
 
 void HttpServer::_run_server()
 {
     this->server_->on<uvw::ListenEvent>([this](const uvw::ListenEvent &, uvw::TCPHandle &srv)
-    {
+                                        {
         auto client = srv.loop().resource<uvw::TCPHandle>();
+        
         srv.accept(*client);
         client->read();
 
         auto sslClient = std::make_shared<SSLClient>(client, this->ctx_);
 
-        sslClient->onData([sslClient, this](const char *data, std::size_t length) {
+        // std::cout << "New client: " << client->peer().ip << std::endl;
+
+
+        sslClient->onData([sslClient, this, client ](const char *data, std::size_t length) {
             std::string request(data, length);
             this->_handle_request(request, sslClient);
         });
 
-        sslClient->onClose([this]() {
-            this->logger_.log("Client disconnected");
+        sslClient->onClose([this, client]() {
+            this->logger_.log("Client disconnected", client->peer().ip);
         });
 
         client->on<uvw::ErrorEvent>([this](const uvw::ErrorEvent &event, uvw::TCPHandle &)
@@ -245,11 +252,20 @@ void HttpServer::_run_server()
     });
 
     this->server_->on<uvw::ErrorEvent>([this](const uvw::ErrorEvent &event, uvw::TCPHandle &)
-        { this->logger_.error("Server error: " + std::string(event.what())); });
+                                       { this->logger_.error("Server error: " + std::string(event.what())); });
 
-    this->server_->listen();
+    //
+    this->server_->listen(128);
     this->logger_.log("Server is listening on " + this->ip_ + ":" + std::to_string(this->port_));
-    this->loop_->run();
+    // handle broken pipe
+    try
+    {
+        this->loop_->run();
+    }
+    catch (const std::exception &e)
+    {
+        this->logger_.error("Error: " + std::string(e.what()));
+    }
 
     SSL_CTX_free(this->ctx_);
     EVP_cleanup();
