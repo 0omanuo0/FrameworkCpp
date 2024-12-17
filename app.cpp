@@ -1,5 +1,5 @@
 #include <iostream>
-#include "src/server.h"
+#include "src/server.hpp"
 #include "src/usersdb.h"
 #include "src/curl.h"
 
@@ -12,10 +12,10 @@ CurlHandler curl;
 
 string HTTPScontext[] = {"secrets/cert.pem", "secrets/key.pem"};
 
-HttpServer server(PORT, "10.1.1.105");
+HttpServer server("10.1.1.105", PORT, HTTPScontext );
 UsersDB DATABASE("secrets/users.db");
 
-types::HttpResponse showApiData(Request &req)
+server_types::HttpResponse showApiData(Request &req)
 {
     auto data = curl.get("https://api.open-meteo.com/v1/forecast?latitude=52.52&longitude=13.41&hourly=temperature_2m", {"Content-Type: application/json"});
     nlohmann::json json_data = nlohmann::json::parse(data);
@@ -40,7 +40,7 @@ types::HttpResponse showApiData(Request &req)
     return server.Render("templates/api_data.html", {{"data", temps}});
 }
 
-types::HttpResponse apiHome(Request &req)
+server_types::HttpResponse apiHome(Request &req)
 {
     std::string url = "https://api.open-meteo.com/v1/forecast?latitude=52.52&longitude=13.41&hourly=temperature_2m";
     std::vector<std::string> headers = {
@@ -54,7 +54,7 @@ types::HttpResponse apiHome(Request &req)
     return Response(res, 200, {{"Content-Type", "application/json"}});
 }
 
-types::HttpResponse home(Request &req)
+server_types::HttpResponse home(Request &req)
 {
     if (req.method == POST)
     {
@@ -110,7 +110,7 @@ types::HttpResponse home(Request &req)
     return server.NotFound();
 }
 
-types::HttpResponse user_account(Request &req)
+server_types::HttpResponse user_account(Request &req)
 {
     if (req.session["logged"] == "true" && req.parameters["iuserid"] == req.session["user"])
         return server.Render("templates/user.html", {{"user", req.parameters["iuserid"]}, {"pass", DATABASE.getUser(req.parameters["iuserid"])[2]}});
@@ -118,12 +118,12 @@ types::HttpResponse user_account(Request &req)
         return server.Redirect("/login");
 }
 
-types::HttpResponse images(Request &req)
+server_types::HttpResponse images(Request &req)
 {
     return server.Render("templates/image.html", {{"id", req.parameters["iuserid"]}});
 }
 
-types::HttpResponse login(Request &req)
+server_types::HttpResponse login(Request &req)
 {
     if (req.method == GET)
     {
@@ -158,14 +158,14 @@ types::HttpResponse login(Request &req)
     return server.NotFound();
 }
 
-types::HttpResponse logout(Request &req)
+server_types::HttpResponse logout(Request &req)
 {
     if (req.session["logged"] == "true")
         req.session.destroySession();
     return server.Redirect("/login");
 }
 
-types::HttpResponse portfolio(Request &req)
+server_types::HttpResponse portfolio(Request &req)
 {
     // get data from static/content/proj.json
     std::ifstream file("static/content/proj.json");
@@ -195,24 +195,24 @@ int main(int argc, char **argv)
         std::cerr << e.what() << '\n';
     }
 
-    server["secret_key"] = uuid::generate_uuid_v4();
-    server["max_connections"] = 10;
+    // server["secret_key"] = uuid::generate_uuid_v4();
+    // server["max_connections"] = 10;
 
-    server.addRoute("/api", apiHome, {GET, POST});
-    server.addRoute("/api/<id>", apiHome, {GET, POST});
+    server.addRoute("/api", {GET, POST}, apiHome);
+    server.addRoute("/api/<id>", {GET, POST}, apiHome);
 
-    server.addRoute("/show", showApiData, {GET, POST});
+    server.addRoute("/show", {GET, POST}, showApiData);
 
     // Ruta sin variables
-    server.addRoute("/home", home, {GET, POST});
-    server.addRoute("/", home, {GET, POST});
-    server.addRoute("/user/<iuserid>", user_account, {GET, POST});
+    server.addRoute("/home", {GET, POST}, home);
+    server.addRoute("/", {GET, POST}, home);
+    server.addRoute("/user/<iuserid>", {GET, POST}, user_account);
 
-    server.addRoute("/login", login, {GET, POST});
-    server.addRoute("/logout", logout, {GET});
-    server.addRoute("/image/<id>", images, {GET});
+    server.addRoute("/login", {GET, POST}, login);
+    server.addRoute("/logout", {GET}, logout);
+    server.addRoute("/image/<id>", {GET}, images);
 
-    server.addRoute("/portfolio", portfolio, {GET}, false);
+    server.addRoute("/portfolio", {GET}, portfolio );
 
-    server.startListener();
+    server.run();
 }
