@@ -1,6 +1,6 @@
 #pragma once
 
-#include <uvw.hpp>
+#include "uvw/src/uvw.hpp"
 #include <thread>
 #include <queue>
 #include <mutex>
