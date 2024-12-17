@@ -1,7 +1,7 @@
 #ifndef SERVER_SSL_HPP
 #define SERVER_SSL_HPP
 
-#include <uvw.hpp>
+#include "uvw/src/uvw.hpp"
 #include <memory>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
@@ -44,17 +44,31 @@ public:
 
     void write(std::unique_ptr<char[]> data, std::size_t length)
     {
-        if(!ssl)
+        if (!ssl)
             return;
-        
-        if (SSL_write(ssl, data.get(), static_cast<int>(length)) > 0)
+
+        int writeResult = SSL_write(ssl, data.get(), static_cast<int>(length));
+
+        if (writeResult > 0)
         {
             flushPendingWrite();
         }
         else
         {
-            std::cerr << "SSL write error: " << SSL_get_error(ssl, -1) << std::endl;
-            handle->close();
+            int error = SSL_get_error(ssl, writeResult);
+
+            if (error == SSL_ERROR_WANT_WRITE || error == SSL_ERROR_WANT_READ)
+            {
+                if (error == SSL_ERROR_WANT_WRITE)
+                {
+                    flushPendingWrite();
+                }
+            }
+            else
+            {
+                std::cerr << "SSL write error" << std::endl;
+                close();
+            }
         }
     }
 
@@ -78,11 +92,21 @@ private:
 
         handle->on<uvw::ErrorEvent>([](const uvw::ErrorEvent &event, uvw::TCPHandle &)
                                     { std::cerr << "TCP Error: " << event.what() << std::endl; });
+
+        handle->on<uvw::CloseEvent>([this](const uvw::CloseEvent &, uvw::TCPHandle &)
+                                    { close(); });
+        
+        handle->on<uvw::WriteEvent>([this](const uvw::WriteEvent &, uvw::TCPHandle &)
+                                    { flushPendingWrite(); });
+
+        handle->on<uvw::TimerEvent>([this](const uvw::TimerEvent &, uvw::TCPHandle &) {
+            std::cerr << "Timeout: Cliente no completó handshake o envío de datos" << std::endl;
+            close();
+        });
     }
 
     void handleData(const char *data, std::size_t length)
     {
-        // std::cout << "Received raw data (length: " << length << "): " << std::string(data, length) << std::endl;
         if (!writeToBIO(data, length))
         {
             std::cerr << "Failed to write to BIO" << std::endl;
@@ -92,12 +116,11 @@ private:
         if (!handshakeComplete)
         {
             performHandshake();
-        }
-        else
-        {
-            processDecryptedData();
+            return;
         }
 
+        processDecryptedData();
+    
         flushPendingWrite();
     }
 
@@ -107,20 +130,16 @@ private:
         if (result == 1)
         {
             handshakeComplete = true;
+            flushPendingWrite();
             // std::cout << "SSL handshake complete!" << std::endl;
         }
         else
         {
 
             int error = SSL_get_error(ssl, result);
-            if (error != SSL_ERROR_WANT_READ && error != SSL_ERROR_WANT_WRITE)
+            if (error == SSL_ERROR_WANT_READ || error == SSL_ERROR_WANT_WRITE)
             {
-                std::cerr << "SSL handshake failed" << std::endl;
-                close();
-            }
-            else if (error == SSL_ERROR_WANT_READ || error == SSL_ERROR_WANT_WRITE)
-            {
-                // std::cout << "SSL handshake in progress" << std::endl;
+                flushPendingWrite();
                 return;
             }
             else
@@ -149,38 +168,60 @@ private:
 
     void flushPendingWrite()
     {
-        // Check that ssl and writeBIO are still valid
         if (!ssl || !writeBIO)
             return;
 
         while (BIO_ctrl_pending(writeBIO) > 0)
         {
-            char buffer[65536]; // 64KB buffer
+            char buffer[4096]; // Tamaño del buffer (4KB)
             int bytesToWrite = BIO_read(writeBIO, buffer, sizeof(buffer));
+
             if (bytesToWrite > 0)
             {
                 auto writeBuffer = std::make_unique<char[]>(bytesToWrite);
                 memcpy(writeBuffer.get(), buffer, bytesToWrite);
+
+                // Escribir los datos al cliente
                 handle->write(std::move(writeBuffer), bytesToWrite);
+            }
+            else if (bytesToWrite == 0)
+            {
+                // No hay más datos pendientes
+                break;
+            }
+            else
+            {
+                // Error al leer del BIO
+                std::cerr << "Error reading from writeBIO" << std::endl;
+                close();
+                return;
             }
         }
     }
 
     void close()
     {
-        if (closeCallback)
-        {
-            closeCallback();
-        }
-
         if (ssl)
         {
-            SSL_shutdown(ssl);
+            int shutdownStatus = SSL_shutdown(ssl);
+            if (shutdownStatus == 0)
+            {
+                // SSL_shutdown necesita llamarse dos veces en una conexión bidireccional.
+                SSL_shutdown(ssl);
+            }
             SSL_free(ssl);
             ssl = nullptr;
         }
 
-        handle->close();
+        if (handle && handle->active())
+        {
+            handle->close();
+        }
+
+        if (closeCallback)
+        {
+            closeCallback();
+        }
     }
 
     bool writeToBIO(const char *data, std::size_t length)
@@ -216,6 +257,9 @@ inline void configureOpenSSL(SSL_CTX *&ctx, const char *certFile, const char *ke
         throw std::runtime_error("Failed to create SSL context");
     }
 
+    // SSL_CTX_set_min_proto_version(ctx, TLS1_1_VERSION); // Minimum version: TLS 1.2
+    // SSL_CTX_set_max_proto_version(ctx, TLS1_3_VERSION); // Maximum version: TLS 1.3
+
     if (SSL_CTX_use_certificate_file(ctx, certFile, SSL_FILETYPE_PEM) <= 0 ||
         SSL_CTX_use_PrivateKey_file(ctx, keyFile, SSL_FILETYPE_PEM) <= 0 ||
         !SSL_CTX_check_private_key(ctx))
@@ -223,6 +267,25 @@ inline void configureOpenSSL(SSL_CTX *&ctx, const char *certFile, const char *ke
         ERR_print_errors_fp(stderr);
         throw std::runtime_error("SSL certificate or key error");
     }
+
+    SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION);
+    SSL_CTX_set_max_proto_version(ctx, TLS1_3_VERSION);
+    SSL_CTX_set_options(ctx, SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3);
+
+    SSL_CTX_set_alpn_select_cb(ctx, [](SSL *ssl, const unsigned char **out, unsigned char *outlen, const unsigned char *in, unsigned int inlen, void *arg) -> int
+                               {
+        static const unsigned char alpn_http_1_1[] = { 8, 'h', 't', 't', 'p', '/', '1', '.', '1' };
+        *out = alpn_http_1_1 + 1;
+        *outlen = alpn_http_1_1[0];
+        return SSL_TLSEXT_ERR_OK; }, nullptr);
+    // SSL_CTX_set_alpn_protos(ctx, (const unsigned char*)"\x08http/1.1", 9);
+
+    // SSL_CTX_set_info_callback(ctx, [](const SSL *ssl, int where, int ret)
+    //                           {
+    //     const char *str = (where & SSL_CB_LOOP) ? "LOOP" :
+    //                     (where & SSL_CB_EXIT) ? "EXIT" :
+    //                     (where & SSL_CB_READ) ? "READ" : "WRITE";
+    //     std::cerr << "SSL debug: " << str << " " << SSL_state_string_long(ssl) << std::endl; });
 }
 
 #endif
