@@ -17,13 +17,13 @@ set(SRC_DIR ${CMAKE_SOURCE_DIR}/src)
 add_subdirectory(${SRC_DIR})
 
 # Agregar el ejecutable principal
-add_executable(httpserver ${CMAKE_SOURCE_DIR}/main.cpp)
+add_executable(httpserver ${CMAKE_SOURCE_DIR}/app.cpp)
 
 # Incluir el directorio de cabeceras
 target_include_directories(httpserver PUBLIC ${SRC_DIR})
 
 # Linkear el ejecutable con la librería
-target_link_libraries(httpserver httpserver_lib uv)
+target_link_libraries(httpserver httpserver_lib uv ssl crypto sqlite3 curl stdc++fs dl uvw)
 
 # Incluir subdirectorio de tests
 if (EXISTS ${TEST_DIR})
