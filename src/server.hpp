@@ -1,7 +1,7 @@
 #ifndef SERVER_H
 #define SERVER_H
 
-#include <uvw.hpp>
+#include "uvw/src/uvw.hpp"
 #include <thread>
 #include <queue>
 #include <mutex>
@@ -36,7 +36,7 @@ namespace server_types{
 
     typedef variant<std::string, Response> HttpResponse;
     typedef function<HttpResponse(Request&)> FunctionHandler;
-    typedef function<Response(Request&)> defaultFunctionHandler;
+    typedef function<Response()> defaultFunctionHandler;
 
     // typedef std::function<std::string()> FunctionHandler;
 
@@ -58,29 +58,29 @@ namespace server_types{
     class HttpServerDefaults{
     private:
         std::string __default_not_found = "<h1>NOT FOUND</h1>";
-        defaultFunctionHandler __not_found_handler = [this](Request &req) -> Response {
+        defaultFunctionHandler __not_found_handler = [this]() -> Response {
             return Response(__default_not_found, 404);
         };
         
         std::string __default_unauthorized = "<h1>UNAUTHORIZED</h1>";
-        defaultFunctionHandler __unauthorized_handler = [this](Request &req) -> Response {
+        defaultFunctionHandler __unauthorized_handler = [this]() -> Response {
             return Response(__default_unauthorized, 401);
         };
 
         std::string __default_internal_server_error = "<html><head><title>500 Internal Server Error</title></head><body><h1>500 Internal Server Error</h1><p>The server encountered an internal error or misconfiguration and was unable to complete your request.</p></body></html>";
-        defaultFunctionHandler __internal_server_error_handler = [this](Request &req) -> Response {
+        defaultFunctionHandler __internal_server_error_handler = [this]() -> Response {
             return Response(__default_internal_server_error, 500);
         };
 
         std::string __default_bad_request = "<html><head><title>400 Bad Request</title></head><body><h1>400 Bad Request</h1><p>Your browser sent a request that this server could not understand.</p></body></html>";
-        defaultFunctionHandler __redirect_handler = [this](Request &req) -> Response {
+        defaultFunctionHandler __redirect_handler = [this]() -> Response {
             return Response(__default_bad_request, 400);
         };
     public:
-        Response getNotFound(Request &req) { return __not_found_handler(req); }
-        Response getUnauthorized(Request &req) { return __unauthorized_handler(req); }
-        Response getInternalServerError(Request &req) { return __internal_server_error_handler(req); }
-        Response getBadRequest(Request &req) { return __redirect_handler(req); }
+        Response getNotFound() { return __not_found_handler(); }
+        Response getUnauthorized() { return __unauthorized_handler(); }
+        Response getInternalServerError() { return __internal_server_error_handler(); }
+        Response getBadRequest() { return __redirect_handler(); }
 
 
         void setNotFound(const defaultFunctionHandler &not_found) { __not_found_handler = not_found; }
@@ -159,6 +159,14 @@ public:
 
         this->routesFile.push_back({endpoint, contentType});
     }
+
+    server_types::HttpResponse NotFound() { return defaults.getNotFound(); }
+    server_types::HttpResponse Unauthorized() { return defaults.getUnauthorized(); }
+    server_types::HttpResponse InternalServerError() { return defaults.getInternalServerError(); }
+    server_types::HttpResponse BadRequest() { return defaults.getBadRequest(); }    
+
+    server_types::HttpResponse Redirect(const std::string &path, int code = 301) { return Response("", code, {{"Location", path}}); }
+
 
     void run();
 
