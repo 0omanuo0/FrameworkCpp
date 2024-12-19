@@ -34,9 +34,9 @@ namespace server_types{
     {"html", "text/html"},
     {"txt", "text/plain"}};
 
-    typedef variant<std::string, Response> HttpResponse;
-    typedef function<HttpResponse(Request&)> FunctionHandler;
-    typedef function<Response()> defaultFunctionHandler;
+    typedef std::variant<std::string, Response> HttpResponse;
+    typedef std::function<HttpResponse(Request&)> FunctionHandler;
+    typedef std::function<Response()> defaultFunctionHandler;
 
     // typedef std::function<std::string()> FunctionHandler;
 
@@ -107,6 +107,9 @@ private:
     void _setup_server();
     void _run_server();
     int _handle_request(std::string request, std::shared_ptr<SSLClient> sslClient);
+    inline int _route_matcher(const std::string &http_route, std::unordered_map<std::string, std::string> &url_params) ;
+    int _handle_route(std::shared_ptr<SSLClient> sslClient, server_types::Route route, Sessions::Session session, std::unordered_map<std::string, std::string> url_params, httpHeaders http_headers);
+    int _handle_static_file(std::shared_ptr<SSLClient> sslClient, const server_types::RouteFile &route_file, Sessions::Session session, httpHeaders http_headers);
 
     // server variables
     int port_;
@@ -117,21 +120,17 @@ private:
     std::string ssl_context_[2];
 
     // server modules
-    idGenerator idGeneratorJWT = idGenerator("");
     std::shared_ptr<Templating> template_render;
+    std::shared_ptr<SessionsManager> sessions_;
     
     // server routes, files and sessions
     std::vector<server_types::Route> routes;
     std::vector<server_types::RouteFile> routesFile;
-    std::vector<Session> sessions;
 
     // defaults
-    std::string default_session_name = "SessionID";
+    
 
-    // server aditional functions
-    int _find_match_session(std::string id);
-    Session _get_session(int index);
-    Session _set_new_session(Session session);
+
 
 public:
     // server modules pub
@@ -144,7 +143,7 @@ public:
     void addRoute(const std::string &path, const std::vector<std::string> &methods, const server_types::FunctionHandler &handler)
         { this->routes.push_back({path, methods, false, [handler](Request& req) -> server_types::HttpResponse { return handler(req); }}); }
 
-    void addRouteFile(string endpoint, const string &extension)
+    void addRouteFile(std::string endpoint, const std::string &extension)
     {
         // if the route dont start with / add it
         if(endpoint[0] != '/') endpoint = "/" + endpoint;
@@ -174,8 +173,8 @@ public:
 
     void urlfor(const std::string &path){
         size_t index = path.find_last_of(".");
-        string extension = "txt";
-        if (string::npos != index)
+        std::string extension = "txt";
+        if (std::string::npos != index)
             extension = path.substr(index + 1);
         addRouteFile(path, extension);
     }
