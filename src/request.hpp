@@ -19,13 +19,13 @@ public:
     Content content;
     std::map<std::string, std::string> form;
 
-    Session& session;
+    Sessions::Session& session;
 
 
-    Request(Session& session_f)
+    Request(Sessions::Session& session_f)
         : session(session_f) {}
 
-    Request(std::unordered_map<std::string, std::string> vars_f, httpHeaders method_f, Session& session_f, HttpRequest method)
+    Request(std::unordered_map<std::string, std::string> vars_f, httpHeaders method_f, Sessions::Session& session_f, HttpRequest method)
         : parameters(vars_f), headers(method_f), session(session_f), method(method.method), route(method.route), query(method.query) {
             if (method.content.isDict())
                 form = method.content.getDict();
