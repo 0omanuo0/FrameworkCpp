@@ -7,13 +7,13 @@
 namespace server_tools
 {
 
-    bool _route_contains_params(const std::string &routePath)
+    inline bool _route_contains_params(const std::string &routePath)
     {
         const std::regex paramRegex("<[^>]+>");
         return std::regex_search(routePath, paramRegex);
     }
 
-    bool _match_path_with_route(const std::string &path, const std::string &routePath, std::unordered_map<std::string, std::string> &url_params)
+    inline bool _match_path_with_route(const std::string &path, const std::string &routePath, std::unordered_map<std::string, std::string> &url_params)
     {
         const std::regex routeRegex("^" + std::regex_replace(routePath, std::regex("<([^>]+)>"), "([^/]+)") + "$");
         std::smatch matches;
