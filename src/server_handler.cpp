@@ -4,14 +4,14 @@
 
 
 
-inline void _send_response(std::shared_ptr<SSLClient> sslClient, const std::string &response)
+inline void _send_response(std::shared_ptr<ssl_server::SSLClient> sslClient, const std::string &response)
 {
     std::unique_ptr<char[]> responseData(new char[response.size()]);
     memcpy(responseData.get(), response.data(), response.size());
     sslClient->write(std::move(responseData), response.size());
 }
 
-inline int _send_file(std::shared_ptr<SSLClient> sslClient, const std::string &path, const std::string &type)
+inline int _send_file(std::shared_ptr<ssl_server::SSLClient> sslClient, const std::string &path, const std::string &type)
 {
     // std::cout << "serving file: " << path << std::endl;
     auto realpath = path;
@@ -77,7 +77,7 @@ inline int HttpServer::_route_matcher(const std::string &http_route, std::unorde
 
 
 int HttpServer::_handle_route(
-        std::shared_ptr<SSLClient> sslClient, 
+        std::shared_ptr<ssl_server::SSLClient> sslClient, 
         server_types::Route route, 
         Sessions::Session session, 
         std::unordered_map<std::string, std::string> url_params, 
@@ -121,7 +121,7 @@ int HttpServer::_handle_route(
     return 0; 
 }
 
-int HttpServer::_handle_static_file(std::shared_ptr<SSLClient> sslClient, const server_types::RouteFile &route_file, Sessions::Session session, httpHeaders http_headers){
+int HttpServer::_handle_static_file(std::shared_ptr<ssl_server::SSLClient> sslClient, const server_types::RouteFile &route_file, Sessions::Session session, httpHeaders http_headers){
     auto error = _send_file(sslClient, route_file.path, route_file.type);
 
     if (error == -1) // 404 file not found
@@ -138,7 +138,7 @@ int HttpServer::_handle_static_file(std::shared_ptr<SSLClient> sslClient, const 
     return 0;
 }
 
-int HttpServer::_handle_request(std::string request, std::shared_ptr<SSLClient> sslClient)
+int HttpServer::_handle_request(std::string request, std::shared_ptr<ssl_server::SSLClient> sslClient)
 {
     httpHeaders http_headers(UrlEncoding::decodeURIComponent(request));
     Sessions::Session* session_opt;

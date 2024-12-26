@@ -1,0 +1,22 @@
+
+{% if card == 0 %}
+    <a href="/projects" id={{ card+1 }} class="w-3/4 carroussel h-[600px] duration-300 ">
+        <img class="h-[450px] transition-opacity-60 z-0 object-cover bg-cover w-full rounded-2xl"
+            src="{{ urlfor(Projects[card].image) }}" alt="">
+
+        <div id={{ 'p'+(card+1) }} class="z-0 items-center text-center space-y-4 py-8">
+            <h2 class=" h2-xl uppercase">{{ Projects[card].Title }}</h2>
+            <p class=" dark:text-gray-300 text-gray-500">{{ Projects[card].Description }}</p>
+        </div>
+    </a>
+{% else %}
+    <a href="/projects#{{ Projects[card].Title }}" id={{ card+1 }} class="w-0 carroussel h-[600px] duration-300 ">
+        <img class="h-[450px] transition-opacity-60 z-0 object-cover bg-cover w-full rounded-2xl"
+            src="{{ urlfor(Projects[card].image) }}" alt="">
+
+        <div id={{ 'p'+(card+1) }} class="hidden z-0 items-center text-center space-y-4 py-8">
+            <h2 class=" h2-xl uppercase">{{ Projects[card].Title }}</h2>
+            <p class=" dark:text-gray-300 text-gray-500">{{ Projects[card].Description }}</p>
+        </div>
+    </a>
+{% endif %}

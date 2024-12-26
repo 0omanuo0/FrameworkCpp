@@ -1,0 +1,112 @@
+
+idea 1:
+  Manejo de Sesiones:
+
+      El método _get_session(int index) retorna una sesión nueva cuando el índice no es válido, en lugar de, por ejemplo, retornar un std::optional<Session> 
+      o una referencia nula. Esto puede generar confusión o comportamiento inesperado, ya que el código que lo utilice podría suponer que siempre obtiene 
+      una sesión válida existente.
+
+      La manipulación de sessions es directa (push_back, erase, reasignación) sin aparente control de concurrencia. Si el taskQueue_ u otros componentes manejan pedidos 
+      concurrentes, es necesario proteger las operaciones con sessions mediante mutex u otro mecanismo de sincronización. Además, si se elimina una sesión mientras 
+      se atiende una request, podría ocasionar problemas.
+      
+      La lógica de validación del JWT (idGeneratorJWT.verifyJWT) y de expiración de sesión debería separarse claramente. Si la sesión expira o el JWT no es válido, 
+      convendría manejarlo de forma más clara y consistente, por ejemplo, retornando directamente una respuesta de error sin crear sesiones espurias.
+
+  Manejo de Archivos (en _send_file):
+
+      Se lee el archivo completo a memoria. Esto puede ser un problema de rendimiento con archivos grandes. Podría implementarse una lectura en bloques o utilizar sendfile (si se busca eficiencia) para mejorar el desempeño.
+      No se maneja adecuadamente el caso en que file_size pueda ser negativo (en caso de error) antes de reservar memoria. tellg() puede retornar -1 en caso de error. Debería validarse antes de usarlo en la reserva de memoria.
+      Si file.read() falla, se retorna -1 pero no se informa claramente el motivo. Sería bueno loguear el error de lectura para tener trazabilidad.
+
+  Manejo de Errores y Excepciones:
+
+      Dentro del lambda que procesa la ruta (donde se llama al handler), el catch (const std::exception &e) atrapa excepciones, pero toda la respuesta al usuario es un 500 Internal Server Error genérico. Aunque esto es comprensible, se podría agregar un mecanismo de logging más detallado o diferenciar entre ciertos tipos de excepción si es necesario.
+      Las funciones _send_response y _send_file podrían retornar valores más estructurados (por ejemplo, un enum con distintos tipos de error) en lugar de int mágicos (-1, -2). Esto haría el código más claro.
+
+  Nombres y Convenciones de Código:
+
+      Hay mezcla de nombres de funciones con guiones bajos delante (_find_match_session, _get_session, _run_server) y otras no. Sería conveniente estandarizar la convención (por ejemplo, métodos privados con lowerCamelCase o snake_case y públicos en CamelCase) para mejorar la legibilidad.
+      El uso de this-> es inconsistente. Aunque no es un error, uniformar su uso ayuda a la claridad.
+
+  Thread Safety y Concurrencia:
+
+      El uso de taskQueue_ y workerPool_ sugiere concurrencia. Sin embargo, no se aprecia ningún control de concurrencia explícito en el acceso a this->sessions, this->logger_ o recursos compartidos. Esto puede producir condiciones de carrera.
+      Se recomienda utilizar mutex, locks o un patrón de concurrencia que garantice que el acceso a estos recursos se haga de manera atómica.
+
+  Respuesta HTTP y Manejo de Conexión:
+
+      La respuesta se genera completamente en memoria (Response::generateResponse()), lo cual está bien para documentos pequeños. Para respuestas grandes, se podría considerar enviar las cabeceras primero y luego el contenido en fragmentos.
+      No se observa manejo de cierre ordenado de conexión ni keep-alive más allá del header enviado. Si la conexión es persistente, habría que asegurar que se procesen múltiples requests por conexión, separar la lógica de parseo de request, etc.
+
+  Códigos de Retorno y Estructuras Internas:
+
+      _handle_request retorna 0 incondicionalmente, incluso en caso de error. Si en algún lugar se necesitara conocer el resultado, no se obtendrá información clara.
+      Sería bueno descomponer _handle_request en funciones más pequeñas: una para parsear la ruta, otra para manejo de sesiones, otra para responder, etc. Esto mejoraría la mantenibilidad.
+
+  Uso de auto y Tipos:
+
+      En general se hace un buen uso de auto, pero es importante verificar los tipos en operaciones complejas. Por ejemplo, auto file_size = file.tellg(); retorna un std::streampos que luego se usa para un new char[file_size]. Habría que asegurar que file_size se convierta a un std::size_t sin pérdida de datos y validar su valor.
+
+  Separación de responsabilidades:
+
+      El código mezcla lógica de servidor SSL, manejo de rutas, sesiones, logging y respuesta HTTP en la misma clase (HttpServer). Sería beneficioso aplicar el principio de responsabilidad única y extraer la funcionalidad en clases auxiliares. Por ejemplo, una clase que maneje las sesiones, otra que maneje las rutas, otra para la configuración SSL, etc.
+
+  Uso de RAII y Recursos Externos (SSL_CTX_free, EVP_cleanup):
+
+      El manejo del contexto SSL se hace de forma manual. Sería ideal encapsular el contexto SSL en una clase RAII que llame a SSL_CTX_free automáticamente en su destructor. Lo mismo para EVP_cleanup() que puede ser invocado en un punto controlado, garantizando que siempre se llame.
+
+
+idea2:
+  Gestión de Errores Mejorada:
+
+      Implementación de códigos de error específicos: Manejar errores como 403 Forbidden, 400 Bad Request, etc., además de los actuales 404 y 500.
+      Log de errores más descriptivos: Agregar más contexto (e.g., ruta solicitada, sesión, detalles del cliente).
+      Manejo de excepciones en _send_file y _handle_request: Si ocurre un error inesperado, asegúrate de capturarlo y enviar una respuesta adecuada al cliente.
+
+  Escalabilidad y Rendimiento:
+
+      Implementación de un thread pool más avanzado:
+          El servidor utiliza un "worker pool" (taskQueue_), pero se podría optimizar para manejar más peticiones simultáneamente.
+          Considerar el uso de librerías como std::async o un std::thread::hardware_concurrency para dimensionar el pool según los núcleos del CPU.
+      Cache de archivos estáticos:
+          Si un cliente solicita archivos como imágenes o CSS, almacénalos en memoria con una política LRU (Least Recently Used).
+      Compresión de respuestas: Implementar gzip o deflate para reducir el tamaño de las respuestas HTTP.
+
+  Seguridad:
+
+      Token JWT y expiración:
+          Mejorar la verificación del token JWT, implementando una política de expiración clara y válida.
+          Permitir "refresh tokens" para que los usuarios puedan renovar sesiones sin necesidad de autenticarse nuevamente.
+      Validación de inputs:
+          Sanitizar las rutas y parámetros URL para evitar Path Traversal y otras vulnerabilidades.
+      TLS/SSL:
+          Mejorar la configuración de OpenSSL para forzar el uso de versiones seguras del protocolo (TLS 1.2 o 1.3).
+          Configurar parámetros como HSTS (Strict Transport Security).
+
+  Implementación de Middleware:
+
+      Agregar un sistema de middleware que permita ejecutar funciones antes y después de manejar las peticiones:
+          Autenticación de usuarios.
+          Registro de logs.
+          Rate limiting (para evitar ataques DDoS).
+
+
+  Mejorar el Sistema de Rutas:
+
+      Wildcard y rutas dinámicas: Mejorar la búsqueda de rutas con parámetros dinámicos, como /api/users/:id.
+      Agrupación de rutas: Permitir agrupar rutas bajo un prefijo común.
+
+      RouteGroup api("/api");
+      api.addRoute("/users", handler);
+
+  Testing y Monitoreo:
+
+      Pruebas Unitarias: Implementar pruebas unitarias con frameworks como Google Test para _handle_request, _send_file y la gestión de sesiones.
+      Logs y métricas: Registrar métricas de rendimiento (tiempo de respuesta, número de peticiones).
+      Herramientas de monitoreo: Integrar herramientas como Prometheus o Grafana para analizar el rendimiento del servidor.
+
+  Documentación de la API:
+
+      Usar herramientas como Swagger para documentar las rutas y respuestas del servidor.
+      Incluir ejemplos claros para desarrolladores que utilicen el servidor HTTP.

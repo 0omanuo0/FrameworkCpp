@@ -4,7 +4,7 @@
 
 int main()
 {
-    std::string ssl_context[2] = {"server-cert.pem", "server-key.pem"};
+    std::string ssl_context[2] = {"secrets/cert.pem", "secrets/key.pem"};
     HttpServer server("10.1.1.105", 4243, ssl_context);
 
     server.addRoute("/test", {"GET"}, [](Request &req) {

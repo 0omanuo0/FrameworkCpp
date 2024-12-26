@@ -266,11 +266,11 @@ public:
             case 0:
                 contentData = std::get<std::string>(other.contentData);
                 break;
-            case 1:
-                contentData = std::get<std::vector<char>>(other.contentData);
-                break;
-            case 2: 
+            case 1: 
                 contentData = std::get<std::map<std::string, std::string>>(other.contentData);
+                break;
+            case 2:
+                contentData = std::get<std::vector<char>>(other.contentData);
                 break;
             case 3: 
                 contentData = std::get<nlohmann::json>(other.contentData);

@@ -1,6 +1,9 @@
 # Recopila los archivos fuente de la librería
 file(GLOB LIB_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp jinjaTemplating/*.cpp tools/*.cpp)
 
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED True)
+
 # Define la biblioteca (estática o dinámica)
 add_library(httpserver_lib STATIC ${LIB_SOURCES})
 
@@ -27,7 +30,7 @@ target_link_libraries(httpserver_lib my_expr_lib ssl crypto sqlite3 curl stdc++f
 
 # Opciones de compilación para la librería
 target_compile_options(httpserver_lib PRIVATE
-    $<$<CONFIG:Debug>:-Wall -g -Og -O0 -DDEBUG>
+    $<$<CONFIG:Debug>: -g -Og -O0 -DDEBUG  -ggdb> # -Wall -Wextra -Wpedantic
     $<$<CONFIG:Release>:-O3 -g>
 )
 

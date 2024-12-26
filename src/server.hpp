@@ -14,6 +14,8 @@
 #include <unordered_map>
 #include <variant>
 #include <vector>
+#include <cstdint>
+#include <cstddef>
 
 
 #include "server_workers.hpp"
@@ -106,10 +108,10 @@ private:
     // server main functions
     void _setup_server();
     void _run_server();
-    int _handle_request(std::string request, std::shared_ptr<SSLClient> sslClient);
+    int _handle_request(std::string request, std::shared_ptr<ssl_server::SSLClient> sslClient);
     inline int _route_matcher(const std::string &http_route, std::unordered_map<std::string, std::string> &url_params) ;
-    int _handle_route(std::shared_ptr<SSLClient> sslClient, server_types::Route route, Sessions::Session session, std::unordered_map<std::string, std::string> url_params, httpHeaders http_headers);
-    int _handle_static_file(std::shared_ptr<SSLClient> sslClient, const server_types::RouteFile &route_file, Sessions::Session session, httpHeaders http_headers);
+    int _handle_route(std::shared_ptr<ssl_server::SSLClient> sslClient, server_types::Route route, Sessions::Session session, std::unordered_map<std::string, std::string> url_params, httpHeaders http_headers);
+    int _handle_static_file(std::shared_ptr<ssl_server::SSLClient> sslClient, const server_types::RouteFile &route_file, Sessions::Session session, httpHeaders http_headers);
 
     // server variables
     int port_;
