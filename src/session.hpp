@@ -134,15 +134,26 @@ public:
 
     Sessions::Session* validateSessionCookie(const std::string &cookie)
     {
+        // conditions:
+        // 1. cookie is empty -> create new session
+        // 2. cookie is not empty but the session does not exist -> create new session
+        // 3. cookie is valid and the session exists -> return session
+        // else -> create new session
+
         std::string id = Sessions::Session::IDfromJWT(cookie);
 
         if (id.empty())
             return getSession(uuid::generate_uuid_v4());
 
-        if(!idGeneratorJWT.verifyJWT(cookie))
-            return nullptr;
+        bool session_exists = sessions.find(id) != sessions.end();
 
-        return getSession(id);
+        if (!session_exists)
+            return getSession(uuid::generate_uuid_v4());
+
+        if(idGeneratorJWT.verifyJWT(cookie))
+            return getSession(id);
+
+        return nullptr;
     }
 
     // operator []
