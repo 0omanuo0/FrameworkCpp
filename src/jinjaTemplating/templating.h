@@ -16,10 +16,8 @@
 #include "types.h"
 #include "tools.h"
 
-#ifdef SERVER_H
 #include "../server.hpp"
 class HttpServer;
-#endif
 
 class Templating
 {
