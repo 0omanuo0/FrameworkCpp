@@ -169,7 +169,16 @@ int HttpServer::_handle_request(std::string request, std::shared_ptr<ssl_server:
 
     if (index_route != -1)
     {
-        this->taskQueue_.push([sslClient, this, route = this->routes[index_route], session, url_params, headers = std::move(http_headers)]()
+        // check if the method is allowed
+        std::vector<std::string> &methods = this->routes[index_route].methods;
+        std::string *method = &http_headers.getMethod();
+        if(std::find(methods.begin(), methods.end(), *method) == methods.end()){
+            _send_response(client, this->defaults.getMethodNotAllowed().generateResponse());
+            this->logger_.log(http_headers.getMethod() + " " + http_headers.getRoute() + " " + http_headers.getQuery(), "400");
+            return 0;
+        }
+
+        this->taskQueue_.push([client, this, route = this->routes[index_route], session, url_params, headers = std::move(http_headers)]()
         {
             this->_handle_route(sslClient, route, session, url_params, headers);
         });
@@ -177,11 +186,8 @@ int HttpServer::_handle_request(std::string request, std::shared_ptr<ssl_server:
         return 0;
     }
 
-    for (const auto &route_file : this->routesFile)
-    {
-        if (route_file.path == http_headers.getRoute())
-        {
-            this->_handle_static_file(sslClient, route_file, session, http_headers);
+    if(HttpServer::_handle_static_file(client, session, http_headers)){
+        return 0;
         }
     }
 

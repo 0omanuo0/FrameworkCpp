@@ -63,6 +63,11 @@ namespace server_types{
         defaultFunctionHandler __not_found_handler = [this]() -> Response {
             return Response(__default_not_found, 404);
         };
+
+        std::string __method_not_allowed = "<h1>METHOD NOT ALLOWED</h1>";
+        defaultFunctionHandler __method_not_allowed_handler = [this]() -> Response {
+            return Response(__method_not_allowed, 405);
+        };
         
         std::string __default_unauthorized = "<h1>UNAUTHORIZED</h1>";
         defaultFunctionHandler __unauthorized_handler = [this]() -> Response {
@@ -80,12 +85,14 @@ namespace server_types{
         };
     public:
         Response getNotFound() { return __not_found_handler(); }
+        Response getMethodNotAllowed() { return __method_not_allowed_handler(); }
         Response getUnauthorized() { return __unauthorized_handler(); }
         Response getInternalServerError() { return __internal_server_error_handler(); }
         Response getBadRequest() { return __redirect_handler(); }
 
 
         void setNotFound(const defaultFunctionHandler &not_found) { __not_found_handler = not_found; }
+        void setMethodNotAllowed(const defaultFunctionHandler &method_not_allowed) { __method_not_allowed_handler = method_not_allowed; }
         void setUnauthorized(const defaultFunctionHandler &unauthorized) { __unauthorized_handler = unauthorized; }
         void setInternalServerError(const defaultFunctionHandler &internal_server_error) { __internal_server_error_handler = internal_server_error; }
         void setBadRequest(const defaultFunctionHandler &bad_request) { __redirect_handler = bad_request; }
