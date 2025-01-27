@@ -13,11 +13,6 @@ idea 1:
       La lógica de validación del JWT (idGeneratorJWT.verifyJWT) y de expiración de sesión debería separarse claramente. Si la sesión expira o el JWT no es válido, 
       convendría manejarlo de forma más clara y consistente, por ejemplo, retornando directamente una respuesta de error sin crear sesiones espurias.
 
-  Manejo de Archivos (en _send_file):
-
-      Se lee el archivo completo a memoria. Esto puede ser un problema de rendimiento con archivos grandes. Podría implementarse una lectura en bloques o utilizar sendfile (si se busca eficiencia) para mejorar el desempeño.
-      No se maneja adecuadamente el caso en que file_size pueda ser negativo (en caso de error) antes de reservar memoria. tellg() puede retornar -1 en caso de error. Debería validarse antes de usarlo en la reserva de memoria.
-      Si file.read() falla, se retorna -1 pero no se informa claramente el motivo. Sería bueno loguear el error de lectura para tener trazabilidad.
 
   Manejo de Errores y Excepciones:
 
