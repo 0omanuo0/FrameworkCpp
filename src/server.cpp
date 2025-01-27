@@ -50,7 +50,7 @@ void HttpServer::_run_server()
 
     // ========== 2. Set up the server to accept new connections ========== //
     this->server_->on<uvw::ListenEvent>([this](const uvw::ListenEvent &, uvw::TCPHandle &srv)
-                                        {
+    {
         auto client = srv.loop().resource<uvw::TCPHandle>();
 
         srv.accept(*client);
@@ -68,7 +68,7 @@ void HttpServer::_run_server()
             { this->logger_.log("Client disconnected", client->peer().ip);});
 
         // Handle client errors
-        client->on<uvw::ErrorEvent>([this](const uvw::ErrorEvent &event, uvw::TCPHandle &handle) {
+         client->on<uvw::ErrorEvent>([this](const uvw::ErrorEvent &event, uvw::TCPHandle &handle) {
             std::string errStr = event.what();
             if (errStr == "EPIPE" || errStr == "broken pipe") {
                 // Not an error to kill the server; but log for debugging
@@ -82,7 +82,7 @@ void HttpServer::_run_server()
             }
         });
     });
-
+    
     // Handle server errors
     this->server_->on<uvw::ErrorEvent>([this](const uvw::ErrorEvent &event, uvw::TCPHandle &)
                                        { this->logger_.error("Server error: " + std::string(event.what())); });

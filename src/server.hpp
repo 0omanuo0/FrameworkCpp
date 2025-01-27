@@ -19,7 +19,6 @@
 
 
 #include "server_workers.hpp"
-#include "server_ssl.hpp"
 #include "logging.hpp"
 #include "httpMethods.hpp"
 #include "session.hpp"

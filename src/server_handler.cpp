@@ -4,16 +4,18 @@
 
 
 
-inline void _send_response(std::shared_ptr<ssl_server::SSLClient> sslClient, const std::string &response)
+inline void _send_response(std::shared_ptr<uvw::TCPHandle> client, const std::string &response)
 {
     std::unique_ptr<char[]> responseData(new char[response.size()]);
     memcpy(responseData.get(), response.data(), response.size());
-    sslClient->write(std::move(responseData), response.size());
+    client->write(std::move(responseData), response.size());
 }
 
-inline int _send_file(std::shared_ptr<ssl_server::SSLClient> sslClient, const std::string &path, const std::string &type)
+inline int _send_file(const std::shared_ptr<uvw::TCPHandle>& client, const std::string& path, const std::string& type)
 {
-    // std::cout << "serving file: " << path << std::endl;
+    if (client == nullptr) // client is not connected
+        return -2;
+
     auto realpath = path;
     if (realpath[0] == '/')
         realpath = realpath.substr(1);
@@ -29,10 +31,8 @@ inline int _send_file(std::shared_ptr<ssl_server::SSLClient> sslClient, const st
 
     std::unique_ptr<char[]> buffer(new char[file_size]);
     if (!file.read(buffer.get(), file_size)) // error reading the file
-    {
-
         return -2;
-    }
+
 
     response_serv.addHeader("Content-Type", type);
     response_serv.addHeader("Content-Disposition", "attachment; filename=\"" + realpath.substr(realpath.find_last_of("/") + 1) + "\"");
@@ -43,10 +43,15 @@ inline int _send_file(std::shared_ptr<ssl_server::SSLClient> sslClient, const st
 
     file.close();
 
-    _send_response(sslClient, response);
 
-    // std::cout << "file served" << std::endl;
+    // Generate the response headers
+    std::string responseHeaders = response_serv.generateResponse();
 
+    // Send headers and file content separately to avoid unnecessary copying
+    _send_response(client, responseHeaders);
+
+    // Send the file content as a separate write operation
+    client->write(std::move(buffer), file_size);
     return 0;
 }
 
@@ -77,7 +82,7 @@ inline int HttpServer::_route_matcher(const std::string &http_route, std::unorde
 
 
 int HttpServer::_handle_route(
-        std::shared_ptr<ssl_server::SSLClient> sslClient, 
+        std::shared_ptr<uvw::TCPHandle> client, 
         server_types::Route route, 
         Sessions::Session session, 
         std::unordered_map<std::string, std::string> url_params, 
@@ -93,7 +98,7 @@ int HttpServer::_handle_route(
     catch (const std::exception &e)
     {
         this->logger_.error("Error while handling the request", e.what());
-        _send_response(sslClient, this->defaults.getInternalServerError().generateResponse()); 
+        _send_response(client, this->defaults.getInternalServerError().generateResponse()); 
 
         this->logger_.log(http_headers.getMethod() + " " + http_headers.getRoute() + " " + http_headers.getQuery(), "500");
         return 0;
@@ -116,29 +121,44 @@ int HttpServer::_handle_route(
     auto resCode = std::to_string(response.getResponseCode());
     std::string responseStr = response.generateResponse();
 
-    _send_response(sslClient, responseStr);
+    _send_response(client, responseStr);
     this->logger_.log(http_headers.getMethod() + " " + http_headers.getRoute() + " " + http_headers.getQuery(), resCode);
     return 0; 
 }
 
-int HttpServer::_handle_static_file(std::shared_ptr<ssl_server::SSLClient> sslClient, const server_types::RouteFile &route_file, Sessions::Session session, httpHeaders http_headers){
-    auto error = _send_file(sslClient, route_file.path, route_file.type);
+int HttpServer::_handle_static_file(std::shared_ptr<uvw::TCPHandle> client, Sessions::Session session, httpHeaders http_headers){
+    
+    const server_types::RouteFile *route_file = nullptr;
+
+    for (const auto &file : this->routesFile)
+    {
+        if (file.path == http_headers.getRoute())
+        {
+            route_file = &file;
+            break;
+        }
+    }
+
+    if (!route_file)
+        return 0;
+    
+    auto error = _send_file(client, route_file->path, route_file->type);
 
     if (error == -1) // 404 file not found
     {
-        _send_response(sslClient, this->defaults.getNotFound().generateResponse());
+        _send_response(client, this->defaults.getNotFound().generateResponse());
         this->logger_.log(http_headers.getMethod() + " " + http_headers.getRoute() + " " + http_headers.getQuery(), "404");
     }
     else if (error == -2) // 500 internal server error
     {
-        _send_response(sslClient, this->defaults.getInternalServerError().generateResponse());
+        _send_response(client, this->defaults.getInternalServerError().generateResponse());
         this->logger_.log(http_headers.getMethod() + " " + http_headers.getRoute() + " " + http_headers.getQuery(), "500");
     }
     this->logger_.log(http_headers.getMethod() + " " + http_headers.getRoute() + " " + http_headers.getQuery(), "200");
-    return 0;
+    return 1;
 }
 
-int HttpServer::_handle_request(std::string request, std::shared_ptr<ssl_server::SSLClient> sslClient)
+int HttpServer::_handle_request(std::string request, std::shared_ptr<uvw::TCPHandle> client)
 {
     httpHeaders http_headers(UrlEncoding::decodeURIComponent(request));
     Sessions::Session* session_opt;
@@ -153,7 +173,7 @@ int HttpServer::_handle_request(std::string request, std::shared_ptr<ssl_server:
     if (!session_opt)
     {
         Response response_server = this->defaults.getUnauthorized();
-        _send_response(sslClient, response_server.generateResponse());
+        _send_response(client, response_server.generateResponse());
 
         this->logger_.log(http_headers.getMethod() + " " + http_headers.getRoute() + " " + http_headers.getQuery() + ", Session expired", "401");
 
@@ -180,7 +200,7 @@ int HttpServer::_handle_request(std::string request, std::shared_ptr<ssl_server:
 
         this->taskQueue_.push([client, this, route = this->routes[index_route], session, url_params, headers = std::move(http_headers)]()
         {
-            this->_handle_route(sslClient, route, session, url_params, headers);
+            this->_handle_route(client, route, session, url_params, headers);
         });
 
         return 0;
@@ -188,11 +208,11 @@ int HttpServer::_handle_request(std::string request, std::shared_ptr<ssl_server:
 
     if(HttpServer::_handle_static_file(client, session, http_headers)){
         return 0;
-        }
     }
+    
 
     // 404, error not found
-    _send_response(sslClient, this->defaults.getNotFound().generateResponse());
+    _send_response(client, this->defaults.getNotFound().generateResponse());
     this->logger_.log(http_headers.getMethod() + " " + http_headers.getRoute() + " " + http_headers.getQuery(), "404");
 
     return 0;

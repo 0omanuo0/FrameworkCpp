@@ -151,7 +151,7 @@ private:
 			try
 			{
 				std::ofstream logFile(this->logFile, std::ios::app);
-				logFile << logResult << std::endl;
+				logFile << logResult << '\n';
 				logFile.close();
 			}
 			catch (const std::exception &e)

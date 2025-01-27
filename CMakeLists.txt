@@ -23,7 +23,7 @@ add_executable(httpserver ${CMAKE_SOURCE_DIR}/app.cpp)
 target_include_directories(httpserver PUBLIC ${SRC_DIR})
 
 # Linkear el ejecutable con la librería
-target_link_libraries(httpserver httpserver_lib uv ssl crypto sqlite3 curl stdc++fs dl uvw)
+target_link_libraries(httpserver httpserver_lib uv sqlite3 curl stdc++fs dl uvw)
 
 # Incluir subdirectorio de tests
 if (EXISTS ${TEST_DIR})
