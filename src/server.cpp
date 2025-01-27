@@ -9,7 +9,7 @@ void HttpServer::_setup_server()
     this->server_ = loop_->resource<uvw::TCPHandle>();
     this->server_->bind(this->ip_, this->port_);
 
-    ssl_server::configureOpenSSL(this->ctx_, this->ssl_context_[0].c_str(), this->ssl_context_[1].c_str());
+    // configureOpenSSL(this->ctx_, this->ssl_context_[0].c_str(), this->ssl_context_[1].c_str());
 }
 
 HttpServer::HttpServer(const std::string &ip, int port, const std::string ssl_context[])
@@ -17,8 +17,8 @@ HttpServer::HttpServer(const std::string &ip, int port, const std::string ssl_co
 {
     this->ip_ = ip;
     this->port_ = port;
-    ssl_context_[0] = ssl_context[0];
-    ssl_context_[1] = ssl_context[1];
+    // ssl_context_[0] = ssl_context[0];
+    // ssl_context_[1] = ssl_context[1];
     this->template_render = std::make_shared<Templating>();
     this->template_render->server = this;
     this->sessions_ = std::make_shared<SessionsManager>(uuid::generate_uuid_v4());
@@ -56,56 +56,23 @@ void HttpServer::_run_server()
         srv.accept(*client);
         client->read();
 
-        // Create an SSL client
-        auto sslClient = std::make_shared<ssl_server::SSLClient>(client, this->ctx_);
+        // std::cout << "New client: " << client->peer().ip << std::endl;
 
-        // Simple timer for connection timeout (e.g., 120 seconds).
-        // In production, you might tie this specifically to handshake timeouts
-        // or inactivity timeouts, not a blanket timer.
-        auto timer = srv.loop().resource<uvw::TimerHandle>();
-        timer->on<uvw::TimerEvent>([client, this](const uvw::TimerEvent &, uvw::TimerHandle &t) {
-            this->logger_.warning("Connection timed out; closing client.");
-            if (client->active()) {
-                client->close();
-            }
-            t.close();
-        });
-        timer->start(std::chrono::seconds(120), std::chrono::seconds(0)); // one-shot
-
-        // Register the data callback
-        sslClient->onData([sslClient, this, client, timer](const char *data, std::size_t length) {
-            // Reset the timer if you want to keep connection alive upon activity
-            timer->again();
-
-            std::string request(data, length);
-            try {
-                this->_handle_request(request, sslClient);
-            } catch (const std::exception &e) {
-                this->logger_.error("Error handling request: " + std::string(e.what()));
-            }
+        client->on<uvw::DataEvent>([this, client](const uvw::DataEvent &event, uvw::TCPHandle &)
+        {
+            std::string request(event.data.get(), event.length);
+            this->_handle_request(request, client);
         });
 
-        // Register the close callback
-        sslClient->onClose([this, client, timer]() {
-            try {
-                // Stop the timer for this client
-                if (timer && timer->active()) {
-                    timer->stop();
-                    timer->close();
-                }
-                auto peer = client->peer();
-                this->logger_.log("Client disconnected", peer.ip + ":" + std::to_string(peer.port));
-            } catch (...) {
-                this->logger_.error("Error logging disconnection.");
-            }
-        });
+        client->on<uvw::CloseEvent>([this, client](const uvw::CloseEvent &, uvw::TCPHandle &)
+            { this->logger_.log("Client disconnected", client->peer().ip);});
 
         // Handle client errors
         client->on<uvw::ErrorEvent>([this](const uvw::ErrorEvent &event, uvw::TCPHandle &handle) {
             std::string errStr = event.what();
             if (errStr == "EPIPE" || errStr == "broken pipe") {
                 // Not an error to kill the server; but log for debugging
-                this->logger_.debug("Broken pipe on client socket, ignoring.");
+                // this->logger_.debug("Broken pipe on client socket, ignoring.");
             } else {
                 this->logger_.error("Client error: " + errStr);
                 // Possibly close if it's a critical error
@@ -113,7 +80,8 @@ void HttpServer::_run_server()
                     handle.close();
                 }
             }
-        }); });
+        });
+    });
 
     // Handle server errors
     this->server_->on<uvw::ErrorEvent>([this](const uvw::ErrorEvent &event, uvw::TCPHandle &)
@@ -138,14 +106,14 @@ void HttpServer::_run_server()
         this->logger_.error("Unknown error occurred in the event loop.");
     }
 
-    // ========== 4. Cleanup SSL resources carefully ========== //
-    // Make sure no other threads use this->ctx_ now.
-    SSL_CTX_free(this->ctx_);
-    this->ctx_ = nullptr;
+    // // ========== 4. Cleanup SSL resources carefully ========== //
+    // // Make sure no other threads use this->ctx_ now.
+    // SSL_CTX_free(this->ctx_);
+    // this->ctx_ = nullptr;
 
-    // EVP_cleanup() may not be necessary on OpenSSL 1.1.0+,
-    // but if you're on older versions:
-    EVP_cleanup();
+    // // EVP_cleanup() may not be necessary on OpenSSL 1.1.0+,
+    // // but if you're on older versions:
+    // EVP_cleanup();
 }
 
 void HttpServer::run()
@@ -166,10 +134,10 @@ void HttpServer::run()
     catch (const std::exception &ex)
     {
         this->logger_.error("Error: " + std::string(ex.what()));
-        if (this->ctx_)
-        {
-            SSL_CTX_free(this->ctx_);
-        }
+        // if (this->ctx_)
+        // {
+        //     SSL_CTX_free(this->ctx_);
+        // }
     }
 }
 

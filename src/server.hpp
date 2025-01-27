@@ -108,18 +108,24 @@ private:
     // server main functions
     void _setup_server();
     void _run_server();
-    int _handle_request(std::string request, std::shared_ptr<ssl_server::SSLClient> sslClient);
+    int _handle_request(std::string request, std::shared_ptr<uvw::TCPHandle> sslClient);
     inline int _route_matcher(const std::string &http_route, std::unordered_map<std::string, std::string> &url_params) ;
-    int _handle_route(std::shared_ptr<ssl_server::SSLClient> sslClient, server_types::Route route, Sessions::Session session, std::unordered_map<std::string, std::string> url_params, httpHeaders http_headers);
-    int _handle_static_file(std::shared_ptr<ssl_server::SSLClient> sslClient, const server_types::RouteFile &route_file, Sessions::Session session, httpHeaders http_headers);
+    int _handle_route(
+            std::shared_ptr<uvw::TCPHandle> sslClient, 
+            server_types::Route route, 
+            Sessions::Session session, 
+            std::unordered_map<std::string, std::string> url_params, 
+            httpHeaders http_headers
+        );
+    int _handle_static_file(std::shared_ptr<uvw::TCPHandle> sslClient, Sessions::Session session, httpHeaders http_headers);
 
     // server variables
     int port_;
     std::string ip_;
 
-    // SSL variables
-    SSL_CTX *ctx_ = nullptr;
-    std::string ssl_context_[2];
+    // SSL variables (NOT WORKING)
+    // SSL_CTX *ctx_ = nullptr;
+    // std::string ssl_context_[2];
 
     // server modules
     std::shared_ptr<Templating> template_render;
@@ -128,9 +134,6 @@ private:
     // server routes, files and sessions
     std::vector<server_types::Route> routes;
     std::vector<server_types::RouteFile> routesFile;
-
-    // defaults
-    
 
 
 
