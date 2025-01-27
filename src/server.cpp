@@ -56,25 +56,61 @@ void HttpServer::_run_server()
         srv.accept(*client);
         client->read();
 
+        server_types::HttpClient client_data = {
+            .client = client,
+            .keep_alive = true,
+            .n_requests = 0,
+            .timeout = srv.loop().resource<uvw::TimerHandle>()
+        };
+
+        client_data.timeout->start(uvw::TimerHandle::Time{5000}, uvw::TimerHandle::Time{0});
+        client_data.timeout->on<uvw::TimerEvent>([client_data](const uvw::TimerEvent &, uvw::TimerHandle &)
+        {
+            client_data.client->close();
+        });
+
+        this->clients[client.get()] = client_data;
+
+
         // std::cout << "New client: " << client->peer().ip << std::endl;
 
         client->on<uvw::DataEvent>([this, client](const uvw::DataEvent &event, uvw::TCPHandle &)
         {
+            // reset timeout
+            this->clients[client.get()].timeout->stop();
+            this->clients[client.get()].timeout->start(uvw::TimerHandle::Time{5000}, uvw::TimerHandle::Time{0});
+
             std::string request(event.data.get(), event.length);
             this->_handle_request(request, client);
+
+            this->clients[client.get()].n_requests++;
+            if (this->clients[client.get()].n_requests > 100)
+            {
+                this->clients[client.get()].client->close();
+            }
         });
 
         client->on<uvw::CloseEvent>([this, client](const uvw::CloseEvent &, uvw::TCPHandle &)
-            { this->logger_.log("Client disconnected", client->peer().ip);});
+        { 
+            if (this->clients.find(client.get()) != this->clients.end())
+                this->clients.erase(client.get());
+
+            this->logger_.log("Client disconnected", client->peer().ip);
+            
+        });
 
         // Handle client errors
-         client->on<uvw::ErrorEvent>([this](const uvw::ErrorEvent &event, uvw::TCPHandle &handle) {
+         client->on<uvw::ErrorEvent>([this, client](const uvw::ErrorEvent &event, uvw::TCPHandle &handle) {
             std::string errStr = event.what();
             if (errStr == "EPIPE" || errStr == "broken pipe") {
                 // Not an error to kill the server; but log for debugging
                 // this->logger_.debug("Broken pipe on client socket, ignoring.");
             } else {
                 this->logger_.error("Client error: " + errStr);
+
+                if (this->clients.find(client.get()) != this->clients.end())
+                    this->clients.erase(client.get());
+
                 // Possibly close if it's a critical error
                 if (handle.active()) {
                     handle.close();

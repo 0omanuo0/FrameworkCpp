@@ -99,6 +99,17 @@ namespace server_types{
     
     };
 
+
+    struct HttpClient
+    {
+        std::shared_ptr<uvw::TCPHandle> client;
+
+        bool keep_alive = false;
+        unsigned long int n_requests = 0;
+
+        std::shared_ptr<uvw::TimerHandle> timeout;
+    };
+
 }
 
 
@@ -142,6 +153,7 @@ private:
     std::vector<server_types::RouteFile> routesFile;
 
 
+    std::unordered_map<void*, server_types::HttpClient> clients;
 
 public:
     // server modules pub
