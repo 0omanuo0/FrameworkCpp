@@ -14,13 +14,12 @@
 #include <set>
 
 #include "types.h"
-// #include "json.hpp"
 #include "tools.h"
 
-// #include "tinyexpr.h"
+#ifdef SERVER_H
 #include "../server.hpp"
-
 class HttpServer;
+#endif
 
 class Templating
 {
@@ -56,8 +55,9 @@ private:
 
     
 public:
-
+#ifdef SERVER_H
     HttpServer *server;
+#endif
 
     Templating(bool storeCache = false);
     std::string Render(const std::string &file, const nlohmann::json &data);

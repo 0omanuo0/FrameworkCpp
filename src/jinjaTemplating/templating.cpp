@@ -64,12 +64,16 @@ std::string Templating::Render(const std::string &file, const nlohmann::json &da
     }
     catch (const Templating_ParserError &e)
     {
+#ifdef SERVER_H
         this->server->logger_.error(e.what());
+#endif
         return "";
     }
     catch (const Templating_RenderError &e)
     {
+#ifdef SERVER_H
         this->server->logger_.error(e.what());
+#endif
         auto data_ = e.getData();
         if (data_.is_null())
             data_ = data;
@@ -78,7 +82,9 @@ std::string Templating::Render(const std::string &file, const nlohmann::json &da
     }
     catch (const std::exception &e)
     {
+#ifdef SERVER_H
         this->server->logger_.error(e.what());
+#endif
         return "";
     }
 }
