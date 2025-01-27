@@ -8,7 +8,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 # Definir directorios
 set(SRC_DIR ${CMAKE_SOURCE_DIR}/src)
 # set(BIN_DIR ${CMAKE_SOURCE_DIR}/bin)
-# set(TEST_DIR ${CMAKE_SOURCE_DIR}/tests)
+set(TEST_DIR ${CMAKE_SOURCE_DIR}/tests)
 
 # Crear directorio de salida si no existe
 # file(MAKE_DIRECTORY ${BIN_DIR})
