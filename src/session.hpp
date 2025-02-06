@@ -103,7 +103,6 @@ namespace Sessions
 
 }
 
-
 class SessionsManager
 {
 private:
@@ -111,14 +110,15 @@ private:
     idGenerator idGeneratorJWT = idGenerator("");
 
 public:
-    SessionsManager(std::string private_key) {
+    SessionsManager(std::string private_key)
+    {
         idGeneratorJWT.setPrivateKey(private_key.empty() ? uuid::generate_uuid_v4() : private_key);
         sessions = std::unordered_map<std::string, Sessions::Session>();
     }
 
     std::string default_session_name = "SessionID";
 
-    Sessions::Session* getSession(std::string id)
+    Sessions::Session *getSession(std::string id)
     {
         if (sessions.find(id) == sessions.end())
         {
@@ -132,28 +132,28 @@ public:
         sessions[session.getId()] = session;
     }
 
-    Sessions::Session* validateSessionCookie(const std::string &cookie)
+    ///////////// TODO: CREATE A PROPER VALIDATION, STORE THE DATA FROM THE SESSION IF IT'S VALID....
+    Sessions::Session *validateSessionCookie(const std::string &cookie)
     {
-        // conditions:
-        // 1. cookie is empty -> create new session
-        // 2. cookie is not empty but the session does not exist -> create new session
-        // 3. cookie is valid and the session exists -> return session
-        // else -> create new session
+        // 1. If cookie is empty, create a new session.
+        if (cookie.empty())
+        {
+            return getSession(uuid::generate_uuid_v4());
+        }
 
-        std::string id = Sessions::Session::IDfromJWT(cookie);
+        // Extract session ID from JWT
+        const std::string id = Sessions::Session::IDfromJWT(cookie);
 
+        // 2. If decoding the cookie yields an empty ID, create a new session.
         if (id.empty())
             return getSession(uuid::generate_uuid_v4());
 
-        bool session_exists = sessions.find(id) != sessions.end();
-
-        if (!session_exists)
-            return getSession(uuid::generate_uuid_v4());
-
-        if(idGeneratorJWT.verifyJWT(cookie))
+        // 3. Check JWT signature; if it's valid, return or create session with that ID.
+        if (idGeneratorJWT.verifyJWT(cookie))
             return getSession(id);
 
-        return nullptr;
+        // 4. If JWT signature is not verified, create a brand-new session.
+        return getSession(uuid::generate_uuid_v4());
     }
 
     // operator []
@@ -172,13 +172,12 @@ public:
         sessions.erase(id);
     }
 
-    Sessions::Session* generateNewSession()
+    Sessions::Session *generateNewSession()
     {
         std::string new_id = uuid::generate_uuid_v4();
-        Sessions::Session new_session(new_id); 
+        Sessions::Session new_session(new_id);
         sessions[new_id] = new_session;
         return &sessions[new_id];
-
     }
 
     // generate jwt from session if
