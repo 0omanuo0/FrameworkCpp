@@ -128,15 +128,15 @@ void HttpServer::_send_file_worker(const std::shared_ptr<uvw::TCPHandle>& client
 }
 
 
-inline int HttpServer::_route_matcher(const std::string &http_route, std::unordered_map<std::string, std::string> &url_params)
+inline int HttpServer::_route_matcher(const std::string &http_route, std::unordered_map<std::string, server_tools::ParamValue> &url_params)
 {
 
     for (size_t i = 0; i < (size_t)this->routes.size(); i++)
     {
         const auto &route = this->routes[i];
-        if (server_tools::_route_contains_params(route.path))
+        if (route.contains_params)
         {
-            if (server_tools::_match_path_with_route(http_route, route.path, url_params))
+            if (server_tools::_match_path_with_route(http_route, route.route_regex, url_params))
             {
                 return i;
             }
@@ -154,7 +154,7 @@ int HttpServer::_handle_route(
     std::shared_ptr<uvw::TCPHandle> client,
     server_types::Route route,
     Sessions::Session session,
-    std::unordered_map<std::string, std::string> url_params,
+    std::unordered_map<std::string, server_tools::ParamValue> url_params,
     httpHeaders http_headers)
 {
     Request arg = Request(url_params, http_headers, session, http_headers.getRequest());
@@ -272,7 +272,7 @@ int HttpServer::_handle_request(std::string request, std::shared_ptr<uvw::TCPHan
 
     // ROUTES
     // Find The route in the routes vector
-    std::unordered_map<std::string, std::string> url_params;
+    std::unordered_map<std::string, server_tools::ParamValue> url_params;
     int index_route = _route_matcher(http_headers.getRoute(), url_params);
 
     if (index_route != -1)

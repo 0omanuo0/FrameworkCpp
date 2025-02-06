@@ -18,7 +18,7 @@
 #include <cstddef>
 #include <zlib.h>
 
-
+#include "tools/complementary_server_functions.hpp"
 #include "server_workers.hpp"
 #include "logging.hpp"
 #include "httpMethods.hpp"
@@ -47,6 +47,8 @@ namespace server_types{
     {
         std::string path;
         std::vector<std::string> methods;
+        bool contains_params;
+        server_tools::routeRE route_regex;
         // types::HttpResponse cache_response;
         bool cache_route;
         FunctionHandler handler;
@@ -127,12 +129,12 @@ private:
     void _setup_server();
     void _run_server();
     int _handle_request(std::string request, std::shared_ptr<uvw::TCPHandle> sslClient);
-    inline int _route_matcher(const std::string &http_route, std::unordered_map<std::string, std::string> &url_params) ;
+    inline int _route_matcher(const std::string &http_route, std::unordered_map<std::string, server_tools::ParamValue> &url_params) ;
     int _handle_route(
             std::shared_ptr<uvw::TCPHandle> sslClient, 
             server_types::Route route, 
             Sessions::Session session, 
-            std::unordered_map<std::string, std::string> url_params, 
+            std::unordered_map<std::string, server_tools::ParamValue> url_params, 
             httpHeaders http_headers
         );
     int _handle_static_file(std::shared_ptr<uvw::TCPHandle> sslClient, Sessions::Session session, httpHeaders http_headers);
@@ -170,7 +172,19 @@ public:
     HttpServer() : HttpServer("127.0.0.1", 5000, std::array<std::string, 2>{std::string(""), std::string("")}.data()) {}
 
     void addRoute(const std::string &path, const std::vector<std::string> &methods, const server_types::FunctionHandler &handler)
-        { this->routes.push_back({path, methods, false, [handler](Request& req) -> server_types::HttpResponse { return handler(req); }}); }
+    { 
+        auto r_regex = server_tools::_route_contains_params(path);
+        this->routes.push_back(
+            {
+                .path = path, 
+                .methods = methods,
+                .contains_params = r_regex.found,
+                .route_regex = r_regex,
+                .cache_route = false, 
+                .handler = [handler](Request& req) -> server_types::HttpResponse { return handler(req); }
+            }
+        ); 
+    }
 
     void addRouteFile(std::string endpoint, const std::string &extension)
     {

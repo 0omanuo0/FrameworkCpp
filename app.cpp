@@ -12,7 +12,7 @@ CurlHandler curl;
 
 string HTTPScontext[] = {"secrets/cert.pem", "secrets/key.pem"};
 
-HttpServer server("10.1.1.105", PORT, HTTPScontext );
+HttpServer server("0.0.0.0", PORT, HTTPScontext );
 UsersDB DATABASE("secrets/users.db");
 
 server_types::HttpResponse showApiData(Request &req)
@@ -112,15 +112,17 @@ server_types::HttpResponse home(Request &req)
 
 server_types::HttpResponse user_account(Request &req)
 {
-    if (req.session["logged"] == "true" && req.parameters["iuserid"] == req.session["user"])
-        return server.Render("templates/user.html", {{"user", req.parameters["iuserid"]}, {"pass", DATABASE.getUser(req.parameters["iuserid"])[2]}});
+    auto u_idt = req.parameters.get<std::string>("iuserid");
+    if (req.session["logged"] == "true" && u_idt == req.session["user"])
+        return server.Render("templates/user.html", {{"user", u_idt}, {"pass", DATABASE.getUser(u_idt)[2]}});
     else
         return server.Redirect("/login");
 }
 
 server_types::HttpResponse images(Request &req)
 {
-    return server.Render("templates/image.html", {{"id", req.parameters["iuserid"]}});
+    auto u_idt = req.parameters.getString("iuserid");
+    return server.Render("templates/image.html", {{"id", u_idt}});
 }
 
 server_types::HttpResponse login(Request &req)
@@ -199,7 +201,7 @@ int main(int argc, char **argv)
     // server["max_connections"] = 10;
 
     server.addRoute("/api", {GET, POST}, apiHome);
-    server.addRoute("/api/<id>", {GET, POST}, apiHome);
+    server.addRoute("/api/<id:int>", {GET, POST}, apiHome);
 
     server.addRoute("/show", {GET, POST}, showApiData);
 
