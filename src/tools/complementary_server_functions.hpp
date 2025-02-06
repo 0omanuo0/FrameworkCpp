@@ -96,38 +96,51 @@ namespace server_tools
         return {true, std::regex("^" + routeRegex + "$"), param_types};
     }
 
-
     inline bool _match_path_with_route(const std::string &path, const routeRE &route, std::unordered_map<std::string, ParamValue> &url_params)
     {
         std::smatch matches;
 
         if (!route.found)
-        {
             return std::regex_match(path, route.regex);
-        }
 
         if (!std::regex_match(path, matches, route.regex))
             return false;
 
-        for (size_t i = 1; i < matches.size(); i++)
+        const size_t matches_size = matches.size();
+        if (matches_size != route.param_types.size() + 1)
+            return false;
+
+        // reserve memory for the url_params map
+        url_params.reserve(url_params.size() + route.param_types.size());
+
+        // from 1 to matches_size to skip the first match which is the whole path
+        for (size_t i = 1; i < matches_size; i++)
         {
             std::string param_name = "param" + std::to_string(i);
             std::string param_value = matches[i].str();
 
-            switch (route.param_types[i - 1])
+            // stoi, stof, stob, etc. throw exceptions if the conversion fails
+            try
             {
-            case ParamType::INT:
-                url_params[param_name] = std::stoi(param_value);
-                break;
-            case ParamType::FLOAT:
-                url_params[param_name] = std::stof(param_value);
-                break;
-            case ParamType::BOOL:
-                url_params[param_name] = (param_value == "true" || param_value == "1");
-                break;
-            case ParamType::STRING:
-                url_params[param_name] = param_value;
-                break;
+                switch (route.param_types[i - 1])
+                {
+                case ParamType::INT:
+                    url_params[param_name] = std::stoi(param_value);
+                    break;
+                case ParamType::FLOAT:
+                    url_params[param_name] = std::stof(param_value);
+                    break;
+                case ParamType::BOOL:
+                    url_params[param_name] = (param_value == "true" || param_value == "1");
+                    break;
+                case ParamType::STRING:
+                    url_params[param_name] = param_value;
+                    break;
+                }
+            }
+            catch (...)
+            {
+                return false;
             }
         }
 
