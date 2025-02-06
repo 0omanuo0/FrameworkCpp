@@ -147,7 +147,7 @@ private:
 			try
 			{
 				std::ofstream logFile(this->logFile, std::ios::app);
-				logFile << logResult << std::endl;
+				logFile << logResult << "\n";
 				logFile.close();
 			}
 			catch (const std::exception &e)
@@ -155,7 +155,7 @@ private:
 				std::cerr << e.what() << '\n';
 			}
 		}
-		std::cout << logResult << std::endl;
+		std::cout << logResult << "\n";
 	}
 
 public:
