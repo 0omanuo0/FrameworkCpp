@@ -16,6 +16,7 @@
 #include <vector>
 #include <cstdint>
 #include <cstddef>
+#include <zlib.h>
 
 
 #include "server_workers.hpp"
@@ -154,6 +155,11 @@ private:
 
 
     std::unordered_map<void*, server_types::HttpClient> clients;
+
+    void _send_file_worker(const std::shared_ptr<uvw::TCPHandle>& client,
+                                     const std::string &path,
+                                     const std::string &type,
+                                     bool isCompressible);
 
 public:
     // server modules pub

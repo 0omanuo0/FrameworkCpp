@@ -26,7 +26,7 @@ include_directories(${LIBUV_INCLUDE_DIRS})
 add_subdirectory(uvw)
 
 # Linkea la biblioteca externa requerida
-target_link_libraries(httpserver_lib my_expr_lib ssl crypto sqlite3 curl stdc++fs dl uvw)
+target_link_libraries(httpserver_lib my_expr_lib sqlite3 curl stdc++fs dl uvw z crypto)
 
 # Opciones de compilación para la librería
 target_compile_options(httpserver_lib PRIVATE

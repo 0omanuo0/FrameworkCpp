@@ -26,11 +26,14 @@ private:
 
     bool isFile = false;
 public:
-
+    
     Response(const std::string &responseMessage, int responseCode=200, std::map<std::string, std::string> headers = {});
     int getResponseCode() {return this->statusCode;}
 
     bool isEmpty() {return this->message.empty();}
+
+    const std::string &getMessage() {return this->message;}
+    void setMessage(const std::string &message) {this->message = message;}
 
     void addHeader(std::string key, std::string value) {this->headers[key] = value;}
     void addSessionCookie(std::string key, std::string sessionID) {this->cookies[key] = sessionID;}

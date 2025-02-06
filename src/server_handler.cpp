@@ -1,6 +1,41 @@
 #include "server.hpp"
 #include "tools/complementary_server_functions.hpp"
 
+std::string compressData(const std::string& data) {
+    z_stream zs;
+    memset(&zs, 0, sizeof(zs));
+
+    if (deflateInit2(&zs, Z_BEST_COMPRESSION, Z_DEFLATED, 15 + 16, 8, Z_DEFAULT_STRATEGY) != Z_OK) {
+        throw std::runtime_error("Error al inicializar la compresión zlib.");
+    }
+
+    zs.next_in = (Bytef*)data.data();
+    zs.avail_in = data.size();
+
+    int ret;
+    char buffer[8192];
+    std::string compressedData;
+
+    do {
+        zs.next_out = reinterpret_cast<Bytef*>(buffer);
+        zs.avail_out = sizeof(buffer);
+
+        ret = deflate(&zs, Z_FINISH);
+
+        if (compressedData.size() < zs.total_out) {
+            compressedData.append(buffer, zs.total_out - compressedData.size());
+        }
+    } while (ret == Z_OK);
+
+    deflateEnd(&zs);
+
+    if (ret != Z_STREAM_END) {
+        throw std::runtime_error("Error durante la compresión zlib.");
+    }
+
+    return compressedData;
+}
+
 inline void _send_response(std::shared_ptr<uvw::TCPHandle> client, const std::string &response)
 {
     std::unique_ptr<char[]> responseData(new char[response.size()]);
@@ -8,47 +43,90 @@ inline void _send_response(std::shared_ptr<uvw::TCPHandle> client, const std::st
     client->write(std::move(responseData), response.size());
 }
 
-inline int _send_file(const std::shared_ptr<uvw::TCPHandle> &client, const std::string &path, const std::string &type)
+
+
+//////////////////////////////////////////////////////////////////////////////// 
+void HttpServer::_send_file_worker(const std::shared_ptr<uvw::TCPHandle>& client,
+                                     const std::string &path,
+                                     const std::string &type,
+                                     bool isCompressible)
 {
-    if (client == nullptr) // client is not connected
-        return -2;
+    // Offload the blocking file I/O and (optional) compression work to your worker pool.
+    this->taskQueue_.push([this, client, path, type, isCompressible]() {
+        std::string realPath = path;
+        if (!realPath.empty() && realPath.front() == '/')
+            realPath = realPath.substr(1);
 
-    auto realpath = path;
-    if (realpath[0] == '/')
-        realpath = realpath.substr(1);
-    std::ifstream file(realpath, std::ios::binary);
-    Response response_serv("", 200);
+        int errorCode = 0;
+        std::vector<char> fileData;
+        std::string headers;
 
-    if (!file.is_open() && !file.good()) // not open or not good (probably not found)
-        return -1;
+        // Blocking file read:
+        std::ifstream file(realPath, std::ios::binary);
+        if (!file.is_open()) {
+            errorCode = -1;  // File not found.
+        } else {
+            file.seekg(0, std::ios::end);
+            auto fileSize = file.tellg();
+            file.seekg(0, std::ios::beg);
+            fileData.resize(fileSize);
+            if (!file.read(fileData.data(), fileSize)) {
+                errorCode = -2;  // Error reading file.
+            }
+            file.close();
+        }
 
-    file.seekg(0, std::ios::end);
-    auto file_size = file.tellg();
-    file.seekg(0, std::ios::beg);
+        // Optionally compress data if required:
+        if (errorCode == 0 && isCompressible) {
+            std::string uncompressed(fileData.begin(), fileData.end());
+            std::string compressed = compressData(uncompressed);
+            fileData.assign(compressed.begin(), compressed.end());
+        }
 
-    std::unique_ptr<char[]> buffer(new char[file_size]);
-    if (!file.read(buffer.get(), file_size)) // error reading the file
-        return -2;
+        // If no errors, prepare HTTP headers.
+        if (errorCode == 0) {
+            Response response("", 200);
+            response.addHeader("Content-Type", type);
+            response.addHeader("Content-Disposition", "attachment; filename=\"" +
+                                   realPath.substr(realPath.find_last_of("/") + 1) + "\"");
+            response.setIsFile(type, fileData.size());
+            if (isCompressible)
+                response.addHeader("Content-Encoding", "gzip");
+            headers = response.generateResponse();
+        }
 
-    response_serv.addHeader("Content-Type", type);
-    response_serv.addHeader("Content-Disposition", "attachment; filename=\"" + realpath.substr(realpath.find_last_of("/") + 1) + "\"");
-    response_serv.setIsFile(type, file_size);
+        // Create an async handle to post a callback on the main event loop thread.
+        auto async = client->loop().resource<uvw::AsyncHandle>();
 
-    std::string response = response_serv.generateResponse();
-    response += std::string(buffer.get(), file_size);
+        // Package up our result in a shared pointer to ensure lifetime safety.
+        auto resultData = std::make_shared<std::tuple<int, std::string, std::vector<char>>>(errorCode, headers, fileData);
 
-    file.close();
+        async->on<uvw::AsyncEvent>([this, client, resultData, async, path](const uvw::AsyncEvent &, uvw::AsyncHandle &) {
+            int error;
+            std::string headers;
+            std::vector<char> fileData;
+            std::tie(error, headers, fileData) = *resultData;
 
-    // Generate the response headers
-    std::string responseHeaders = response_serv.generateResponse();
+            // Send the appropriate response based on error code.
+            if (error == -1) {
+                _send_response(client, this->defaults.getNotFound().generateResponse());
+                this->logger_.log("File not found", "404");
+            } else if (error == -2) {
+                _send_response(client, this->defaults.getInternalServerError().generateResponse());
+                this->logger_.log("Error reading file", "500");
+            } else {
+                _send_response(client, headers);
+                client->write(fileData.data(), fileData.size());
+                this->logger_.log("GET " + path, "200");
+            }
+            async->close(); // Clean up the async handle.
+        });
 
-    // Send headers and file content separately to avoid unnecessary copying
-    _send_response(client, responseHeaders);
-
-    // Send the file content as a separate write operation
-    client->write(std::move(buffer), file_size);
-    return 0;
+        // Trigger the async handle, scheduling the callback on the main loop.
+        async->send();
+    });
 }
+
 
 inline int HttpServer::_route_matcher(const std::string &http_route, std::unordered_map<std::string, std::string> &url_params)
 {
@@ -70,6 +148,7 @@ inline int HttpServer::_route_matcher(const std::string &http_route, std::unorde
     }
     return -1;
 }
+
 
 int HttpServer::_handle_route(
     std::shared_ptr<uvw::TCPHandle> client,
@@ -113,6 +192,13 @@ int HttpServer::_handle_route(
         response.addHeader("Keep-Alive", "timeout=5, max=100");
     }
 
+    // if compression is enabled, compress the response
+    auto encoding = http_headers["Accept-Encoding"].isList() ? http_headers["Accept-Encoding"].getList() : std::vector<std::string>();
+    if(std::find(encoding.begin(), encoding.end(), "gzip") != encoding.end()){
+        response.addHeader("Content-Encoding", "gzip");
+        response.setMessage(compressData(response.getMessage()));
+    }
+
     auto resCode = std::to_string(response.getResponseCode());
     std::string responseStr = response.generateResponse();
 
@@ -141,19 +227,15 @@ int HttpServer::_handle_static_file(std::shared_ptr<uvw::TCPHandle> client, Sess
     if (!route_file)
         return 0;
 
-    auto error = _send_file(client, route_file->path, route_file->type);
+    auto encoding = http_headers["Accept-Encoding"].getList();
 
-    if (error == -1) // 404 file not found
-    {
-        _send_response(client, this->defaults.getNotFound().generateResponse());
-        this->logger_.log(http_headers.getMethod() + " " + http_headers.getRoute() + " " + http_headers.getQuery(), "404");
-    }
-    else if (error == -2) // 500 internal server error
-    {
-        _send_response(client, this->defaults.getInternalServerError().generateResponse());
-        this->logger_.log(http_headers.getMethod() + " " + http_headers.getRoute() + " " + http_headers.getQuery(), "500");
-    }
-    this->logger_.log(http_headers.getMethod() + " " + http_headers.getRoute() + " " + http_headers.getQuery(), "200");
+
+    // auto error = _send_file(client, route_file->path, route_file->type, std::find(encoding.begin(), encoding.end(), "gzip") != encoding.end());
+
+    bool CanCompress = (route_file->type != "application/force-download") && (std::find(encoding.begin(), encoding.end(), "gzip") != encoding.end());
+
+    _send_file_worker(client, route_file->path, route_file->type, CanCompress);
+
     return 1;
 }
 
