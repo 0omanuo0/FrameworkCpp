@@ -117,6 +117,7 @@ class idGenerator
             return header_encoded + "." + payload_encoded + "." + signature_encoded;
         }
 
+        //////////// TODO: CREATE A PROPER VALIDATION, THAT CHECKS THE EXPIRATION DATE, ETC
         bool verifyJWT(const std::string &token) {
             std::string header, payload, signature;
             std::istringstream token_stream(token);
@@ -132,6 +133,7 @@ class idGenerator
 
             return signature == signature_verify_encoded;
         }
+
 };
 
 #endif

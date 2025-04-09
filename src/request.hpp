@@ -14,36 +14,53 @@ private:
 public:
     UrlParams(std::unordered_map<std::string, server_tools::ParamValue> vars_f)
         : parameters(vars_f) {}
-    UrlParams():parameters({}) {}
+    UrlParams() : parameters({}) {}
 
-    // example: url_params<int>["id"]
+    int size() const
+    {
+        return parameters.size();
+    }
+
+    bool empty() const
+    {
+        return parameters.empty();
+    }
+
+    int indexType(const std::string &key) const
+    {
+        if (parameters.find(key) == parameters.end())
+            return -1;
+        return parameters.at(key).index();
+    }
+
+    // example: url_params.get<int>("id");
     template <typename T>
     T get(const std::string &key) const
     {
         auto it = parameters.find(key);
-        if (it != parameters.end()) {
-            if (std::holds_alternative<T>(it->second)) {
+        if (it != parameters.end())
+        {
+            if (std::holds_alternative<T>(it->second))
                 return std::get<T>(it->second);
-            } else {
-                throw std::runtime_error("Tipo incorrecto para la clave: " + key);
-            }
-        } else {
-            throw std::out_of_range("Clave no encontrada: " + key);
+            else
+                throw std::runtime_error("Error: type mismatch");
         }
+        else
+            return T();
     }
 
     std::string getString(const std::string &key) const
     {
         // if is string return as string, else convert
         auto it = parameters.find(key);
-        if (it != parameters.end()) {
-            if(it->second.index() == 3) 
+        if (it != parameters.end())
+        {
+            if (it->second.index() == 3)
                 return std::get<std::string>(it->second);
-            else 
+            else
                 return std::to_string(std::get<int>(it->second));
-            
-        } 
-        else 
+        }
+        else
             return "";
     }
 
@@ -51,7 +68,8 @@ public:
     {
         // if is string return as string, else convert
         auto it = parameters.find(key);
-        if (it != parameters.end()) {
+        if (it != parameters.end())
+        {
             switch (it->second.index())
             {
             case 0:
@@ -69,9 +87,9 @@ public:
             default:
                 return std::numeric_limits<int>::quiet_NaN();
                 break;
-            }            
-        } 
-        else 
+            }
+        }
+        else
             return std::numeric_limits<int>::quiet_NaN();
     }
 
@@ -79,7 +97,8 @@ public:
     {
         // if is string return as string, else convert
         auto it = parameters.find(key);
-        if (it != parameters.end()) {
+        if (it != parameters.end())
+        {
             switch (it->second.index())
             {
             case 0:
@@ -97,9 +116,9 @@ public:
             default:
                 return std::numeric_limits<float>::quiet_NaN();
                 break;
-            }            
-        } 
-        else 
+            }
+        }
+        else
             return std::numeric_limits<float>::quiet_NaN();
     }
 
@@ -107,7 +126,8 @@ public:
     {
         // if is string return as string, else convert
         auto it = parameters.find(key);
-        if (it != parameters.end()) {
+        if (it != parameters.end())
+        {
             switch (it->second.index())
             {
             case 0:
@@ -125,9 +145,9 @@ public:
             default:
                 return false;
                 break;
-            }            
-        } 
-        else 
+            }
+        }
+        else
             return false;
     }
 

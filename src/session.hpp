@@ -128,7 +128,6 @@ namespace Sessions
 
 }
 
-
 class SessionsManager
 {
 private:
@@ -136,7 +135,8 @@ private:
     idGenerator idGeneratorJWT = idGenerator("");
 
 public:
-    SessionsManager(std::string private_key) {
+    SessionsManager(std::string private_key)
+    {
         idGeneratorJWT.setPrivateKey(private_key.empty() ? uuid::generate_uuid_v4() : private_key);
         sessions = std::unordered_map<std::string, Sessions::Session>();
     }
@@ -192,7 +192,8 @@ public:
             return generateNewSession();
 
 
-        return nullptr;
+        // 4. If JWT signature is not verified, create a brand-new session.
+        return getSession(uuid::generate_uuid_v4());
     }
 
     // operator []
@@ -211,13 +212,12 @@ public:
         sessions.erase(id);
     }
 
-    Sessions::Session* generateNewSession()
+    Sessions::Session *generateNewSession()
     {
         std::string new_id = uuid::generate_uuid_v4();
-        Sessions::Session new_session(new_id); 
+        Sessions::Session new_session(new_id);
         sessions[new_id] = new_session;
         return &sessions[new_id];
-
     }
 
     // generate jwt from session if
