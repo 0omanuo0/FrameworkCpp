@@ -26,7 +26,13 @@ private:
 
     bool isFile = false;
 public:
-    
+    Response(){}
+
+    // copy constructor
+    Response(const Response &other)
+        : type(other.type), statusCode(other.statusCode), message(other.message),
+          headers(other.headers), cookies(other.cookies), isFile(other.isFile) {}
+
     Response(const std::string &responseMessage, int responseCode=200, std::map<std::string, std::string> headers = {});
     int getResponseCode() {return this->statusCode;}
 
