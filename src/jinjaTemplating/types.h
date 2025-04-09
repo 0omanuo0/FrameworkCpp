@@ -183,10 +183,23 @@ class Templating_ParserError : public TemplatingError
 {
 private:
     Block blockTrace_;
+    StackTrace stack_trace_;
+    const char *file_;
+    int line_;
 
 public:
     Templating_ParserError(std::string msg, Block blockTrace, nlohmann::json json_data={}) : TemplatingError(msg, json_data), blockTrace_(blockTrace) {}
-    const Block getStackTrace() const { return blockTrace_; }
+
+    Templating_ParserError(std::string msg, Block blockTrace, const char* file, int line, nlohmann::json json_data={})
+        : TemplatingError(msg, json_data),
+          blockTrace_(blockTrace),
+          stack_trace_(get_stacktrace(2)), 
+          file_(file), line_(line) {}
+
+    std::string getFile() const { return std::string(file_); }
+    int getLine() const { return line_; }
+
+    const StackTrace& getStackTrace() const { return stack_trace_; }
 };
 
 class Templating_RenderError : public TemplatingError
@@ -200,6 +213,9 @@ private:
 public:
     Templating_RenderError(std::string msg, Block blockTrace, const char *file, int line, nlohmann::json json_data={})
         : Templating_RenderError(msg, blockTrace, get_stacktrace(2), file, line, json_data) {}
+
+    Templating_RenderError(std::string msg, const char *file, int line, nlohmann::json json_data={})
+        : TemplatingError(msg, json_data), file_(file), line_(line) {}
 
 
     Templating_RenderError(const std::string &msg, Block blockTrace, const StackTrace& stacktrace, const char* file, int line, nlohmann::json json_data={})
