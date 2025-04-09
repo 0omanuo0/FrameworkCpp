@@ -53,7 +53,7 @@ std::string Templating::Render(const std::string &file, const nlohmann::json &da
 
         if (this->storeCache)
         {
-            // store all the cachedTemplating as byte array in templating.cache
+            // store all the cachedTemplating as byte array in templating.cache !!!!!!!!!!!!!!!!!! NOT IMPLEMENTED
             std::ofstream cacheFile("templating.cache", std::ios::binary);
             cacheFile.write((char *)&cachedTemplating, sizeof(cachedTemplating));
 
@@ -67,7 +67,7 @@ std::string Templating::Render(const std::string &file, const nlohmann::json &da
 #ifdef SERVER_H
         this->server->logger_.error(e.what());
 #endif
-        return "";
+        return render_error(e.what(), e.getStackTrace(), e.getFile(), e.getLine(), {}, root);
     }
     catch (const Templating_RenderError &e)
     {
@@ -85,7 +85,7 @@ std::string Templating::Render(const std::string &file, const nlohmann::json &da
 #ifdef SERVER_H
         this->server->logger_.error(e.what());
 #endif
-        return "";
+        return render_error(e.what(), {}, {}, {}, {}, root);
     }
 }
 
@@ -138,6 +138,171 @@ std::vector<int> Templating::findChildren(Block block, int lineN)
     return indices;
 }
 
+
+Block Templating::BlockParser(std::istream &stream, Block parent)
+{
+    std::string line;
+    Block block;
+
+    auto createBlock = [&](BlockType type, int indexToPlace = -1, std::string expression = "")
+    {
+        Block newBlock;
+        newBlock.type = type;
+        newBlock.indexToPlace = indexToPlace;
+        newBlock.expression = expression;
+        newBlock.compiledExpression.compile(expression);
+        return newBlock;
+    };
+
+    if (parent.type != BlockType::ROOT)
+        block = parent;
+
+    while (std::getline(stream, line))
+    {
+        std::smatch match;
+
+        if (std::regex_search(line, match, statement_pattern))
+        {
+            std::string statement = match[1].str();
+
+            if (std::regex_search(statement, match, include_pattern))
+            {
+                auto path = match[1].str();
+                std::ifstream file(path);
+                if (!file)
+                    throw std::filesystem::filesystem_error("Error opening file: " + match[1].str(), std::make_error_code(std::errc::no_such_file_or_directory));
+
+                this->cachedTemplating[path] = generateCache(path);
+
+                Block includeBlock = createBlock(BlockType::INCLUDE, block.content.size(), path);
+                block.children.push_back(includeBlock);
+
+                file.close();
+            }
+            else if (std::regex_search(statement, match, if_pattern))
+            {
+                Block newBlock = createBlock(BlockType::IF, block.content.size(), match[1].str());
+                newBlock = this->BlockParser(stream, newBlock);
+                block.children.push_back(newBlock);
+            }
+            else if (std::regex_search(statement, match, for_pattern))
+            {
+                Block newBlock = createBlock(BlockType::FOR, block.content.size(), match[1].str());
+                newBlock = this->BlockParser(stream, newBlock);
+                if (block.subBlocks.empty())
+                    block.children.push_back(newBlock);
+                else
+                    block.subBlocks.back().children.push_back(newBlock);
+            }
+            else if (std::regex_search(statement, match, elif_pattern) && block.type == BlockType::IF)
+            {
+                if (SubBlockType::ELSE == block.subBlocks.back().type)
+                    return block;
+                SubBlock subBlock;
+                subBlock.type = SubBlockType::ELIF;
+                subBlock.expression = match[1].str();
+                subBlock.compiledExpression.compile(subBlock.expression);
+                block.subBlocks.push_back(subBlock);
+            }
+            else if (std::regex_search(statement, match, else_pattern) && block.type == BlockType::IF)
+            {
+                // if sublocks length is greater than 0 and there is an else block, the last subblock must be an elif
+                if (!block.subBlocks.empty())
+                    if (SubBlockType::ELSE == block.subBlocks.back().type)
+                        return block;
+                SubBlock subBlock;
+                subBlock.type = SubBlockType::ELSE;
+                block.subBlocks.push_back(subBlock);
+            }
+            else if ((std::regex_search(statement, match, endif_pattern) && block.type == BlockType::IF) || (std::regex_search(statement, match, endfor_pattern) && block.type == BlockType::FOR))
+                return block;
+            else
+                throw Templating_ParserError("Invalid statement: " + statement, block, __builtin_FILE(), __builtin_LINE());
+        }
+        else
+        {
+            if (!block.subBlocks.empty())
+                block.subBlocks.back().content.push_back(line);
+            else
+                block.content.push_back(line);
+        }
+    }
+
+    return block;
+}
+
+std::string Templating::__renderExpressions(std::string expression, nlohmann::json &data)
+{
+
+    std::string resultString;
+    std::smatch match;
+    // std::cout << data.dump() << std::endl;
+    // Check if is a jinja expression. e.g., {{ expression }}
+    if (std::regex_search(expression, match, expression_pattern))
+    {
+        std::string value = match[1].str();
+
+        size_t matchPosition = match.position();
+        std::string left = expression.substr(0, matchPosition);
+        std::string right = expression.substr(matchPosition + match[0].length());
+
+        // Check if there are more expressions in the right side
+        if (!right.empty())
+            right = this->__renderExpressions(right, data);
+        resultString = left;
+
+        const auto url_for_function = [this](const token_data_t *args) -> token_data_t
+        {
+            const int type = args[0].index();
+            string_t path = "";
+            if (type == 1)
+            {
+                path = std::get<string_t>(args[0]);
+                if (path.empty())
+                    return token_data_t(string_t(""));
+            }
+            else if (type == 2)
+            {
+                // auto a = std::get<json_t>(value).dump();
+                path = std::get<json_t>(args[0]).dump();
+                if (path.empty())
+                    return token_data_t(string_t(""));
+                path = (char)path[0] == '"' ? path.substr(1, path.size() - 2) : path;
+
+                // return a;
+            }
+            else
+                return token_data_t(string_t(""));
+
+#ifdef SERVER_H
+            if (this->server != nullptr)
+                this->server->urlfor(path);
+#endif
+            return path;
+        };
+
+        // Evaluate the expression, it handles filters and variables from the json data
+        expr expressionEval(value);
+        auto a = convert_to_variant_map(data);
+        expressionEval.set_variables(a);
+        expressionEval.set_functions({{"urlfor", {url_for_function, 1}}});
+        expressionEval.compile();
+        try
+        {
+            auto result = expressionEval.eval().toString(true);
+            return resultString + result + right;
+        }
+        catch (const std::exception &e)
+        {
+            throw Templating_RenderError("Error evaluating expression: " + value, __builtin_FILE(), __builtin_LINE(), data);
+        }
+
+        
+    }
+    return expression;
+}
+
+
 std::string Templating::__Render(Block block, nlohmann::json &data)
 {
     std::string result = "";
@@ -161,8 +326,11 @@ std::string Templating::__Render(Block block, nlohmann::json &data)
                 break;
 
             case BlockType::INCLUDE:
-                result += this->__Render(childBlock, data);
+            {
+                auto rootInclude = this->cachedTemplating[childBlock.expression].content;
+                result += this->__Render(rootInclude, data);
                 break;
+            }
 
             default:
                 throw Templating_ParserError("Invalid block type", block);
@@ -294,157 +462,4 @@ std::string Templating::__renderForBlock(Block &forBlock, nlohmann::json &data)
         throw Templating_RenderError("Invalid iterable: " + iterable + " is not an array or an object", forBlock, __FILE__, __LINE__);
 
     return result;
-}
-
-Block Templating::BlockParser(std::istream &stream, Block parent)
-{
-    std::string line;
-    Block block;
-
-    auto createBlock = [&](BlockType type, int indexToPlace = -1, std::string expression = "")
-    {
-        Block newBlock;
-        newBlock.type = type;
-        newBlock.indexToPlace = indexToPlace;
-        newBlock.expression = expression;
-        newBlock.compiledExpression.compile(expression);
-        return newBlock;
-    };
-
-    if (parent.type != BlockType::ROOT)
-        block = parent;
-
-    while (std::getline(stream, line))
-    {
-        std::smatch match;
-
-        if (std::regex_search(line, match, statement_pattern))
-        {
-            std::string statement = match[1].str();
-
-            if (std::regex_search(statement, match, include_pattern))
-            {
-                std::ifstream file(match[1].str());
-                if (!file)
-                    throw std::filesystem::filesystem_error("Error opening file: " + match[1].str(), std::make_error_code(std::errc::no_such_file_or_directory));
-
-                Block newBlock = createBlock(BlockType::INCLUDE, block.content.size(), match[1].str());
-                newBlock = this->BlockParser(file, newBlock);
-                block.children.push_back(newBlock);
-
-                file.close();
-            }
-            else if (std::regex_search(statement, match, if_pattern))
-            {
-                Block newBlock = createBlock(BlockType::IF, block.content.size(), match[1].str());
-                newBlock = this->BlockParser(stream, newBlock);
-                block.children.push_back(newBlock);
-            }
-            else if (std::regex_search(statement, match, for_pattern))
-            {
-                Block newBlock = createBlock(BlockType::FOR, block.content.size(), match[1].str());
-                newBlock = this->BlockParser(stream, newBlock);
-                if (block.subBlocks.empty())
-                    block.children.push_back(newBlock);
-                else
-                    block.subBlocks.back().children.push_back(newBlock);
-            }
-            else if (std::regex_search(statement, match, elif_pattern) && block.type == BlockType::IF)
-            {
-                if (SubBlockType::ELSE == block.subBlocks.back().type)
-                    return block;
-                SubBlock subBlock;
-                subBlock.type = SubBlockType::ELIF;
-                subBlock.expression = match[1].str();
-                subBlock.compiledExpression.compile(subBlock.expression);
-                block.subBlocks.push_back(subBlock);
-            }
-            else if (std::regex_search(statement, match, else_pattern) && block.type == BlockType::IF)
-            {
-                // if sublocks length is greater than 0 and there is an else block, the last subblock must be an elif
-                if (!block.subBlocks.empty())
-                    if (SubBlockType::ELSE == block.subBlocks.back().type)
-                        return block;
-                SubBlock subBlock;
-                subBlock.type = SubBlockType::ELSE;
-                block.subBlocks.push_back(subBlock);
-            }
-            else if ((std::regex_search(statement, match, endif_pattern) && block.type == BlockType::IF) || (std::regex_search(statement, match, endfor_pattern) && block.type == BlockType::FOR))
-                return block;
-            else
-                throw Templating_ParserError("Invalid statement: " + statement, block);
-        }
-        else
-        {
-            if (!block.subBlocks.empty())
-                block.subBlocks.back().content.push_back(line);
-            else
-                block.content.push_back(line);
-        }
-    }
-
-    return block;
-}
-
-std::string Templating::__renderExpressions(std::string expression, nlohmann::json &data)
-{
-
-    std::string resultString;
-    std::smatch match;
-    // std::cout << data.dump() << std::endl;
-    // Check if is a jinja expression. e.g., {{ expression }}
-    if (std::regex_search(expression, match, expression_pattern))
-    {
-        std::string value = match[1].str();
-
-        size_t matchPosition = match.position();
-        std::string left = expression.substr(0, matchPosition);
-        std::string right = expression.substr(matchPosition + match[0].length());
-
-        // Check if there are more expressions in the right side
-        if (!right.empty())
-            right = this->__renderExpressions(right, data);
-        resultString = left;
-
-        const auto url_for_function = [this](const token_data_t *args) -> token_data_t
-        {
-            const int type = args[0].index();
-            string_t path = "";
-            if (type == 1)
-            {
-                path = std::get<string_t>(args[0]);
-                if (path.empty())
-                    return token_data_t(string_t(""));
-            }
-            else if (type == 2)
-            {
-                // auto a = std::get<json_t>(value).dump();
-                path = std::get<json_t>(args[0]).dump();
-                if (path.empty())
-                    return token_data_t(string_t(""));
-                path = (char)path[0] == '"' ? path.substr(1, path.size() - 2) : path;
-
-                // return a;
-            }
-            else
-                return token_data_t(string_t(""));
-
-#ifdef SERVER_H
-            if (this->server != nullptr)
-                this->server->urlfor(path);
-#endif
-            return path;
-        };
-
-        // Evaluate the expression, it handles filters and variables from the json data
-        expr expressionEval(value);
-        auto a = convert_to_variant_map(data);
-        expressionEval.set_variables(a);
-        expressionEval.set_functions({{"urlfor", {url_for_function, 1}}});
-        expressionEval.compile();
-        const auto result = expressionEval.eval().toString(true);
-
-        return resultString + result + right;
-    }
-    return expression;
 }

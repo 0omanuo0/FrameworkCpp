@@ -57,13 +57,13 @@ namespace Sessions
         // convert to std::string as json
         std::string toString()
         {
-            std::string result = "{";
-            result += "\"id\":\"" + std::string(id) + "\",";
-            for (auto &i : values)
-                result += "\"" + i.first + "\":\"" + i.second + "\",";
-            result.pop_back();
-            result += "}";
-            return result;
+            nlohmann::json json;
+            json["id"] = id;
+            for (const auto &pair : values)
+            {
+                json[pair.first] = pair.second;
+            }
+            return json.dump();
         }
 
         static std::string IDfromJWT(const std::string &jwt)
@@ -94,6 +94,31 @@ namespace Sessions
             return "";
         }
 
+        static nlohmann::json JSONfromJWT(const std::string &jwt)
+        {
+            std::vector<std::string> parts = splitString(jwt, '.');
+            if (parts.size() != 3)
+                return nlohmann::json();
+
+            if (parts[1].size() % 4 != 0)
+                parts[1].append(4 - parts[1].size() % 4, '=');
+
+            std::string decoded = UrlEncoding::decodeURIbase64(parts[1]);
+            if (decoded.empty())
+                return nlohmann::json();
+
+            try
+            {
+                auto jsonPayload = nlohmann::json::parse(decoded);
+                return jsonPayload;
+            }
+            catch (const nlohmann::json::exception &e)
+            {
+                // Handle JSON parsing errors
+                return nlohmann::json();
+            }
+        }
+
         Session() { createSession(); }
         // constructo gets id_f as std::string and needs to be converted to char*
         Session(std::string id_f) : id(id_f) {}
@@ -122,7 +147,7 @@ public:
     {
         if (sessions.find(id) == sessions.end())
         {
-            return &sessions[uuid::generate_uuid_v4()];
+            return nullptr;
         }
         return &sessions[id];
     }
@@ -132,25 +157,40 @@ public:
         sessions[session.getId()] = session;
     }
 
-    ///////////// TODO: CREATE A PROPER VALIDATION, STORE THE DATA FROM THE SESSION IF IT'S VALID....
-    Sessions::Session *validateSessionCookie(const std::string &cookie)
+    ///// TODO: THE VALIDATION IS NOT TAKING CARE OF THE PRIVKEY
+    Sessions::Session* validateSessionCookie(const std::string &cookie)
     {
-        // 1. If cookie is empty, create a new session.
-        if (cookie.empty())
-        {
-            return getSession(uuid::generate_uuid_v4());
-        }
+        // conditions:
+        // 1. cookie is empty -> create new session
+        // 2. cookie is not empty but the session does not exist -> create new session
+        // 3. cookie is valid and the session exists -> return session
+        // else -> create new session
 
-        // Extract session ID from JWT
-        const std::string id = Sessions::Session::IDfromJWT(cookie);
+        auto json_session = Sessions::Session::JSONfromJWT(cookie);
+        std::string id = json_session["id"];
 
-        // 2. If decoding the cookie yields an empty ID, create a new session.
         if (id.empty())
-            return getSession(uuid::generate_uuid_v4());
+            return generateNewSession();
 
-        // 3. Check JWT signature; if it's valid, return or create session with that ID.
-        if (idGeneratorJWT.verifyJWT(cookie))
-            return getSession(id);
+        // bool session_exists = sessions.find(id) != sessions.end();
+
+        // if (!session_exists)
+        //     return generateNewSession();
+
+        if(idGeneratorJWT.verifyJWT(cookie))
+        {
+            auto s = sessions.find(id);
+            if(s != sessions.end())
+                return &s->second;
+
+            // append new session and push the json
+            sessions[id] = Sessions::Session(id, json_session);
+            return &sessions[id];
+        }
+        else // expired or not valid
+            sessions.erase(id);
+            return generateNewSession();
+
 
         // 4. If JWT signature is not verified, create a brand-new session.
         return getSession(uuid::generate_uuid_v4());

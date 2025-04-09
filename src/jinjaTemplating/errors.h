@@ -89,17 +89,27 @@ inline std::string render_error(const std::string &msg, const StackTrace &stack_
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap');
 
+        :root {
+            --color-accent: #ff6b6b;
+            --color-bg: #f9fafb;
+            --color-text: #333;
+            --color-background: #fff;
+
+            --li-color-odd: #f1f5f9;
+            --li-color-even: #e2e8f0;
+        }
+
         body {
             font-family: 'Inter', sans-serif;
             margin: 0;
             padding: 0;
-            background-color: #f9fafb;
+            background-color: var(--color-bg);
             color: #333;
             line-height: 1.6;
         }
 
         h1 {
-            background-color: #ff6b6b;
+            background-color: var(--color-accent);
             color: white;
             padding: 15px;
             margin: 0;
@@ -108,7 +118,7 @@ inline std::string render_error(const std::string &msg, const StackTrace &stack_
         }
 
         h2 {
-            background-color: #ff6b6b;
+            background-color: var(--color-accent);
             color: white;
             padding: 10px;
             margin: 0;
@@ -119,7 +129,7 @@ inline std::string render_error(const std::string &msg, const StackTrace &stack_
 
         p {
             padding: 15px;
-            background-color: #fff;
+            background-color: white;
             margin: 10px;
             border-radius: 5px;
             box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
@@ -139,14 +149,14 @@ inline std::string render_error(const std::string &msg, const StackTrace &stack_
         details {
             margin: 10px;
             padding: 15px;
-            background-color: #fff;
+            background-color: white;
             border-radius: 5px;
             box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
         }
 
         summary {
             padding: 10px;
-            background-color: #ff6b6b;
+            background-color: var(--color-accent);
             color: white;
             cursor: pointer;
             border-radius: 5px;
@@ -165,19 +175,19 @@ inline std::string render_error(const std::string &msg, const StackTrace &stack_
             border-radius: 5px;
             font-family: 'Courier New', Courier, monospace;
             font-size: 0.9rem;
-            border: 1px solid #e2e8f0;
+            border: 1px solid var(--li-color-even);
         }
 
         li:nth-child(odd) {
-            background-color: #f1f5f9;
+            background-color: var(--li-color-odd);
         }
 
         li:nth-child(even) {
-            background-color: #e2e8f0;
+            background-color: var(--li-color-even);
         }
 
         li strong {
-            color: #ff6b6b;
+            color: var(--color-accent);
             font-weight: normal;
         }
 
@@ -192,15 +202,17 @@ inline std::string render_error(const std::string &msg, const StackTrace &stack_
             margin: 10px;
             background-color: #fff;
             border-radius: 5px;
+            max-height: 600px;
+            overflow-y: auto;
         }
 
         #debugger pre {
             white-space: pre-wrap;
             word-wrap: break-word;
-            background-color: #f9f9f9;
+            background-color: var(--li-color-odd);
             padding: 10px;
             border-radius: 5px;
-            border: 1px solid #e2e8f0;
+            border: 1px solid var(--li-color-even);
         }
 
         #search-container {
@@ -216,7 +228,7 @@ inline std::string render_error(const std::string &msg, const StackTrace &stack_
             margin-left: 30px;
             padding: 10px;
             border-radius: 5px;
-            border: 1px solid #e2e8f0;
+            border: 1px solid var(--li-color-even);
             width: 500px;
             height: fit-content;
             transition: cubic-bezier(0.4, 0, 0.2, 1) 0.1s;
@@ -224,7 +236,7 @@ inline std::string render_error(const std::string &msg, const StackTrace &stack_
         }
 
         #search:focus {
-            outline: 2px solid #ff6b6b;
+            outline: 2px solid var(--color-accent);
         }
 
         span.string {
@@ -270,6 +282,7 @@ inline std::string render_error(const std::string &msg, const StackTrace &stack_
         #block-tree li.open > ul {
             display: block;
         }
+
     </style>
     <link
         href="data:text/css,%3Ais(%5Bid*%3D'google_ads_iframe'%5D%2C%5Bid*%3D'taboola-'%5D%2C.taboolaHeight%2C.taboola-placeholder%2C%23credential_picker_container%2C%23credentials-picker-container%2C%23credential_picker_iframe%2C%5Bid*%3D'google-one-tap-iframe'%5D%2C%23google-one-tap-popup-container%2C.google-one-tap-modal-div%2C%23amp_floatingAdDiv%2C%23ez-content-blocker-container)%20%7Bdisplay%3Anone!important%3Bmin-height%3A0!important%3Bheight%3A0!important%3B%7D"
@@ -277,9 +290,9 @@ inline std::string render_error(const std::string &msg, const StackTrace &stack_
 </head>
 
 <body>
-    <h1>Error:)" + msg +
+    <h1>Error: )" + msg +
                        R"(</h1>
-    <h2>File:)" + file +
+    <h2>File: )" + file +
                        ":" + std::to_string(line) + R"(</h2>
     <p>Sorry, something went wrong. This error occurred due to an issue in the application. Please check the stack trace below to identify the source of the problem. If this issue persists, contact support with the error details.
     <span><strong>Ver:</strong> jinjaTemplating 0.2a</span></p>
@@ -315,14 +328,14 @@ inline std::string render_error(const std::string &msg, const StackTrace &stack_
         const debug = document.getElementById('debugger');
         const search = document.getElementById('search');
 
-        search.value = "jsonVariables";
+        search.value = "";
 
         search.addEventListener('input', function (e) {
             const searchValue = e.target.value;
             // execute the search
             let searchResult = '';
             try {
-                searchResult = eval(searchValue);
+                searchResult = eval("jsonVariables" + (searchValue === "" ? "" : "." + searchValue));
             } catch (error) {
                 searchResult = error.message;
             }

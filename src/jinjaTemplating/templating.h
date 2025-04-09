@@ -35,8 +35,6 @@ private:
 
     const std::regex include_pattern = std::regex(R"(\binclude\s+"([^"]*)\s*)");
 
-    const std::regex urlfor_string_pattern = std::regex(R"(\burlfor\(\s*(['"])([^{}]+)\1\s*\))");
-    const std::regex urlfor_pattern = std::regex(R"(\burlfor\(\s*([^{}]+)\s*\))");
 
     Block BlockParser(std::istream &stream, Block parent = Block());
     CachedFile generateCache(std::string path);

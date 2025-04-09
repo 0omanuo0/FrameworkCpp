@@ -21,6 +21,7 @@ namespace server_tools
         bool found;
         std::regex regex;
         std::vector<ParamType> param_types;
+        std::vector<std::string> param_names;
     };
 
     using ParamValue = std::variant<int, float, bool, std::string>;
@@ -54,6 +55,7 @@ namespace server_tools
 
         std::string routeRegex = routePath;
         std::vector<ParamType> param_types;
+        std::vector<std::string> param_names;
 
         for (; i != end; ++i)
         {
@@ -90,10 +92,10 @@ namespace server_tools
             if (pos != std::string::npos)
             {
                 routeRegex.replace(pos, full_match.length(), replacement);
+                param_names.push_back(param_name);
             }
         }
-
-        return {true, std::regex("^" + routeRegex + "$"), param_types};
+        return {true, std::regex("^" + routeRegex + "$"), param_types, param_names};
     }
 
     inline bool _match_path_with_route(const std::string &path, const routeRE &route, std::unordered_map<std::string, ParamValue> &url_params)
@@ -116,7 +118,7 @@ namespace server_tools
         // from 1 to matches_size to skip the first match which is the whole path
         for (size_t i = 1; i < matches_size; i++)
         {
-            std::string param_name = "param" + std::to_string(i);
+            std::string param_name = route.param_names[i - 1];
             std::string param_value = matches[i].str();
 
             // stoi, stof, stob, etc. throw exceptions if the conversion fails
