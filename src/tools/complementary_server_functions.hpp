@@ -21,6 +21,7 @@ namespace server_tools
         bool found;
         std::regex regex;
         std::vector<ParamType> param_types;
+        std::vector<std::string> param_names;
     };
 
     using ParamValue = std::variant<int, float, bool, std::string>;
@@ -54,6 +55,7 @@ namespace server_tools
 
         std::string routeRegex = routePath;
         std::vector<ParamType> param_types;
+        std::vector<std::string> param_names;
 
         for (; i != end; ++i)
         {
@@ -90,10 +92,10 @@ namespace server_tools
             if (pos != std::string::npos)
             {
                 routeRegex.replace(pos, full_match.length(), replacement);
+                param_names.push_back(param_name);
             }
         }
-
-        return {true, std::regex("^" + routeRegex + "$"), param_types};
+        return {true, std::regex("^" + routeRegex + "$"), param_types, param_names};
     }
 
 
@@ -111,7 +113,7 @@ namespace server_tools
 
         for (size_t i = 1; i < matches.size(); i++)
         {
-            std::string param_name = "param" + std::to_string(i);
+            std::string param_name = route.param_names[i - 1];
             std::string param_value = matches[i].str();
 
             switch (route.param_types[i - 1])
