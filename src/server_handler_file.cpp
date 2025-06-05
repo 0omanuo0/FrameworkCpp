@@ -188,6 +188,8 @@ int HttpServer::_handle_static_file(std::shared_ptr<HttpConnection> conn,
     bool canCompress = (route_file->type != "application/force-download") &&
                        (std::find(encoding.begin(), encoding.end(), "gzip") != encoding.end());
 
+    canCompress = canCompress && route_file->type.substr(0, 6) != "image/";
+    
     std::string realPath = route_file->path;
     if (!this->enable_cache || !realPath.empty() && realPath.front() == '/')
         realPath = realPath.substr(1);
