@@ -62,8 +62,8 @@ nlohmann::json Templating::block_to_json(const Block &block)
             }
             else
             {
-            j_subBlock["children"].push_back(block_to_json(child));
-        }
+                j_subBlock["children"].push_back(block_to_json(child));
+            }
         }
         j_block["subBlocks"].push_back(j_subBlock);
     }
@@ -79,8 +79,8 @@ nlohmann::json Templating::block_to_json(const Block &block)
         }
         else
         {
-        j_block["children"].push_back(block_to_json(child));
-    }
+            j_block["children"].push_back(block_to_json(child));
+        }
     }
     return j_block;
 }
@@ -92,7 +92,7 @@ inline std::string intToHex(int value)
     return ss.str();
 }
 
-inline std::string render_error(const std::string &msg, const StackTrace &stack_trace, std::string file, int line, nlohmann::json json_data = {}, const Block &block = Block())
+std::string Templating::render_error(const std::string &msg, const StackTrace &stack_trace, std::string file, int line, nlohmann::json json_data, const Block &block)
 {
 #pragma region json_data_head
     std::string body = R"(
@@ -185,6 +185,7 @@ inline std::string render_error(const std::string &msg, const StackTrace &stack_
             list-style-type: none;
             padding: 0;
             margin: 10px 0;
+            border-radius: 5px;
         }
 
         li {
@@ -402,8 +403,14 @@ inline std::string render_error(const std::string &msg, const StackTrace &stack_
         const jsonBlockData = )" +
             block_json.dump() + R"(;
 
+        function decodeHTML(html) {
+            const txt = document.createElement("textarea");
+            txt.innerHTML = html;
+            return txt.value;
+        }
 
-        function createTreeView(container, data) {
+
+        function createTreeView(container, data, isContent = false) {
             const ul = document.createElement('ul');
             container.appendChild(ul);
 
@@ -422,17 +429,25 @@ inline std::string render_error(const std::string &msg, const StackTrace &stack_
                     li.appendChild(keySpan);
 
                     if (typeof data[key] === 'object' && data[key] !== null) {
+                        keySpan.textContent = key + ": " + (data[key].type !== undefined ? data[key].type : "");
                         ul.appendChild(li);
-                        createTreeView(li, data[key]);
+                        createTreeView(li, data[key], key === 'content');
                     } else {
+                        if(data[key] === '') continue;
+
                         // El valor se muestra como texto plano junto a la clave
                         const valueSpan = document.createElement('span');
-                        valueSpan.textContent = data[key];
+                        valueSpan.textContent = decodeHTML(data[key]);
                         li.appendChild(valueSpan);
                         ul.appendChild(li);
 
                         // Si no tiene hijos, desactivar la selección
                         li.style.cursor = 'default';
+                        li.style.whiteSpace = 'pre';
+                        if(isContent){
+                            li.style.margin = '0';
+                            li.style.borderRadius = '0';
+                        }
                     }
                 }
             }
