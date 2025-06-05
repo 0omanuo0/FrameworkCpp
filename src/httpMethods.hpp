@@ -341,6 +341,7 @@ private:
 
     std::string method;
     std::string route;
+    std::string http_version;
     std::string query;
     Content body;
 
