@@ -5,7 +5,7 @@
 // -----------------------------------------------------------------------------
 // 3) Worker function to read & optionally compress a file, then respond
 // -----------------------------------------------------------------------------
-void HttpServer::_send_file_worker(const std::shared_ptr<uvw::TCPHandle> &client,
+void HttpServer::_send_file_worker(const std::shared_ptr<HttpConnection> &conn,
                                    const std::string &path,
                                    const std::string &realPath,
                                    const std::string &type,
@@ -13,7 +13,7 @@ void HttpServer::_send_file_worker(const std::shared_ptr<uvw::TCPHandle> &client
 {
     // Offload the blocking file I/O and compression to a worker thread.
     taskQueue_.push(
-        [this, client, realPath, path, type, isCompressible]()
+        [this, conn, realPath, path, type, isCompressible]()
         {
             int errorCode = 0;
             std::vector<char> fileData;
@@ -115,15 +115,15 @@ void HttpServer::_send_file_worker(const std::shared_ptr<uvw::TCPHandle> &client
             // -----------------------------
             // 3.4) Send back results via uvw::AsyncHandle
             // -----------------------------
-            auto async = client->loop().resource<uvw::AsyncHandle>();
+            auto async = conn->loop().resource<uvw::AsyncHandle>();
             auto resultData = std::make_shared<std::tuple<int, std::string, std::vector<char>>>(
                 errorCode, headers, fileData);
 
             // The callback that runs on the event loop thread
             async->on<uvw::AsyncEvent>(
-                [this, client, resultData, async, path](const uvw::AsyncEvent &, uvw::AsyncHandle &)
+                [this, conn, resultData, async, path](const uvw::AsyncEvent &, uvw::AsyncHandle &)
                 {
-                    if (!client || !client->active())
+                    if (!conn || !conn->active())
                     {
                         async->close();
                         return;
@@ -136,20 +136,20 @@ void HttpServer::_send_file_worker(const std::shared_ptr<uvw::TCPHandle> &client
 
                     if (error == -1)
                     {
-                        _send_response(client, this->defaults.getNotFound().generateResponse());
+                        conn->_send_response(this->defaults.getNotFound().generateResponse());
                         this->logger_.log("File not found: " + path, "404");
                     }
                     else if (error == -2)
                     {
-                        _send_response(client, this->defaults.getInternalServerError().generateResponse());
+                        conn->_send_response(this->defaults.getInternalServerError().generateResponse());
                         this->logger_.log("Error reading file: " + path, "500");
                     }
                     else
                     {
                         // Send headers
-                        _send_response(client, headers);
+                        conn->_send_response(headers);
                         // Then send file content. For large files, consider chunking or partial writes.
-                        client->write(fileData.data(), fileData.size());
+                        conn->asyncWrite(fileData.data(), fileData.size());
 
                         this->logger_.log("GET " + path, "200");
                     }
@@ -162,7 +162,7 @@ void HttpServer::_send_file_worker(const std::shared_ptr<uvw::TCPHandle> &client
         });
 }
 
-int HttpServer::_handle_static_file(std::shared_ptr<uvw::TCPHandle> client,
+int HttpServer::_handle_static_file(std::shared_ptr<HttpConnection> conn,
                                     Sessions::Session session,
                                     httpHeaders http_headers)
 {
@@ -194,17 +194,17 @@ int HttpServer::_handle_static_file(std::shared_ptr<uvw::TCPHandle> client,
 
     if (!this->file_cache_.isInCache(realPath))
     {
-        _send_file_worker(client, route_file->path, realPath, route_file->type, canCompress);
+        _send_file_worker(conn, route_file->path, realPath, route_file->type, canCompress);
         return 1;
     }
 
-    auto async = client->loop().resource<uvw::AsyncHandle>();
+    auto async = conn->loop().resource<uvw::AsyncHandle>();
     auto cachedData = this->file_cache_.get(realPath);
 
     async->on<uvw::AsyncEvent>(
-        [this, client, cachedData, async, type = route_file->type, isCompressible = canCompress, realPath](const uvw::AsyncEvent &, uvw::AsyncHandle &)
+        [this, conn, cachedData, async, type = route_file->type, isCompressible = canCompress, realPath](const uvw::AsyncEvent &, uvw::AsyncHandle &)
         {
-            if (!client || !client->active())
+            if (!conn || !conn->active())
             {
                 async->close();
                 return;
@@ -236,16 +236,16 @@ int HttpServer::_handle_static_file(std::shared_ptr<uvw::TCPHandle> client,
                 }
 
                 std::string headers = response.generateResponse();
-                _send_response(client, headers);
+                conn->_send_response(headers);
 
                 auto data = std::make_shared<std::vector<char>>(*cachedData);
-                client->write(data->data(), data->size());
+                conn->asyncWrite(data->data(), data->size());
                 this->logger_.log("GET /" + realPath,
                       "200");
             }
             else
             {
-                _send_response(client, this->defaults.getNotFound().generateResponse());
+                conn->_send_response(this->defaults.getNotFound().generateResponse());
             }
 
             async->close(); // Clean up the async handle

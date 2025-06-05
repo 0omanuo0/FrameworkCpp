@@ -36,16 +36,16 @@ inline int HttpServer::_route_matcher(const std::string &http_route,
 // -----------------------------------------------------------------------------
 // Main request handler for an inbound request
 // -----------------------------------------------------------------------------
-int HttpServer::_handle_request(std::string request, std::shared_ptr<uvw::TCPHandle> client)
+int HttpServer::_handle_request(std::string request, std::shared_ptr<HttpConnection> conn)
 {
-    if (!client || !client->active())
+    if (!conn || !conn->active())
     {
         return -1; // Invalid or closed client, just bail out
     }
 
     httpHeaders http_headers(UrlEncoding::decodeURIComponent(request));
 
-    auto &client_data = this->clients[client.get()];
+    auto &client_data = this->clients[conn->getClient()];
     // More robust check for keep-alive: look for "keep-alive" substring or parse properly
     client_data.keep_alive = (http_headers["Connection"].getString() == "keep-alive");
 
@@ -69,7 +69,7 @@ int HttpServer::_handle_request(std::string request, std::shared_ptr<uvw::TCPHan
     {
         // Session invalid or expired
         Response response_server = this->defaults.getUnauthorized();
-        _send_response(client, response_server.generateResponse());
+        conn->_send_response(response_server.generateResponse());
 
         this->logger_.log(http_headers.getMethod() + " " + http_headers.getRoute() +
                               " " + http_headers.getQuery() + ", Session expired",
@@ -84,7 +84,7 @@ int HttpServer::_handle_request(std::string request, std::shared_ptr<uvw::TCPHan
     // -----------------------------
     // 4) Try static file routes first because they are faster (dont use regex)
     // -----------------------------
-    if (_handle_static_file(client, session, http_headers))
+    if (_handle_static_file(conn, session, http_headers))
     {
         return 0;
     }
@@ -102,7 +102,7 @@ int HttpServer::_handle_request(std::string request, std::shared_ptr<uvw::TCPHan
         if (std::find(methods.begin(), methods.end(), http_headers.getMethod()) == methods.end())
         {
 
-            _send_response(client, this->defaults.getMethodNotAllowed().generateResponse());
+            conn->_send_response(this->defaults.getMethodNotAllowed().generateResponse());
 
             this->logger_.log(http_headers.getMethod() + " " + http_headers.getRoute() +
                                   " " + http_headers.getQuery(),
@@ -113,7 +113,7 @@ int HttpServer::_handle_request(std::string request, std::shared_ptr<uvw::TCPHan
         if (this->routes[index_route].static_route && !this->static_routes[index_route].is_empty)
         {
             Response response_server = this->static_routes[index_route].res;
-            _send_response(client, response_server.generateResponse());
+            conn->_send_response(response_server.generateResponse());
             this->logger_.log(http_headers.getMethod() + " " + http_headers.getRoute() +
                                   " " + http_headers.getQuery(),
                               std::to_string(response_server.getResponseCode()));
@@ -121,8 +121,8 @@ int HttpServer::_handle_request(std::string request, std::shared_ptr<uvw::TCPHan
         }
 
         // Push route handling to the worker queue
-        taskQueue_.push([client, this, route = routes[index_route], session, url_params, headers = std::move(http_headers)]()
-                        { this->_handle_route(client, route, session, url_params, headers); });
+        taskQueue_.push([conn, this, route = routes[index_route], session, url_params, headers = std::move(http_headers)]()
+                        { this->_handle_route(conn, route, session, url_params, headers); });
         return 0;
     }
 
@@ -136,7 +136,7 @@ int HttpServer::_handle_request(std::string request, std::shared_ptr<uvw::TCPHan
             // sanitize route (remove all dangerous characters)
             if (check_dangerous_route(http_headers.getRoute(), this->public_folder)) // return 404
             {
-                _send_response(client, this->defaults.getNotFound().generateResponse());
+                conn->_send_response(this->defaults.getNotFound().generateResponse());
                 this->logger_.log(http_headers.getMethod() + " " + http_headers.getRoute() +
                                       " " + http_headers.getQuery(),
                                   "404");
@@ -151,7 +151,7 @@ int HttpServer::_handle_request(std::string request, std::shared_ptr<uvw::TCPHan
             else
                 type = "application/octet-stream";
             // send to the worker queue
-            this->_send_file_worker(client, http_headers.getRoute(), http_headers.getRoute().substr(1), type, true);
+            this->_send_file_worker(conn, http_headers.getRoute(), http_headers.getRoute().substr(1), type, true);
 
             return 0;
         }
@@ -160,7 +160,7 @@ int HttpServer::_handle_request(std::string request, std::shared_ptr<uvw::TCPHan
     // -----------------------------
     // 5) No route matched => 404
     // -----------------------------
-    _send_response(client, this->defaults.getNotFound().generateResponse());
+    conn->_send_response(this->defaults.getNotFound().generateResponse());
     this->logger_.log(http_headers.getMethod() + " " + http_headers.getRoute() +
                           " " + http_headers.getQuery(),
                       "404");
