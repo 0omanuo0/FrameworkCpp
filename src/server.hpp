@@ -27,6 +27,8 @@
 #include "response.hpp"
 #include "request.hpp"
 #include "jinjaTemplating/templating.h"
+#include "TLSserver.hpp"
+#include "httpConnection.hpp"
 
 class Templating;
 
@@ -215,15 +217,16 @@ private:
     // server main functions
     void _setup_server();
     void _run_server();
-    int _handle_request(std::string request, std::shared_ptr<uvw::TCPHandle> sslClient);
+    void _run_server_ssl();
+    int _handle_request(std::string request, std::shared_ptr<HttpConnection> conn);
     inline int _route_matcher(const std::string &http_route, std::unordered_map<std::string, server_tools::ParamValue> &url_params);
     int _handle_route(
-        std::shared_ptr<uvw::TCPHandle> sslClient,
+        std::shared_ptr<HttpConnection> conn,
         server_types::Route route,
         Sessions::Session session,
         std::unordered_map<std::string, server_tools::ParamValue> url_params,
         httpHeaders http_headers);
-    int _handle_static_file(std::shared_ptr<uvw::TCPHandle> sslClient, Sessions::Session session, httpHeaders http_headers);
+    int _handle_static_file(std::shared_ptr<HttpConnection> conn, Sessions::Session session, httpHeaders http_headers);
 
     // server variables
     int port_;
@@ -252,7 +255,7 @@ private:
     int max_age_cache = 86400;
     std::unordered_map<void *, server_types::HttpClient> clients;
 
-    void _send_file_worker(const std::shared_ptr<uvw::TCPHandle> &client,
+    void _send_file_worker(const std::shared_ptr<HttpConnection> &conn,
                            const std::string &path,
                            const std::string &realPath,
                            const std::string &type,
