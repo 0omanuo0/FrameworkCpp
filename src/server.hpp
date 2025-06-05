@@ -38,7 +38,19 @@ namespace server_types
         {"js", "application/javascript"},
         {"css", "text/css"},
         {"html", "text/html"},
-        {"txt", "text/plain"}};
+        {"txt", "text/plain"},
+        {"jpg", "image/jpeg"},
+        {"jpeg", "image/jpeg"},
+        {"png", "image/png"},
+        {"gif", "image/gif"},
+        {"svg", "image/svg+xml"},
+        {"ico", "image/x-icon"},
+        {"woff", "font/woff"},
+        {"woff2", "font/woff2"},
+        {"ttf", "font/ttf"},
+        {"otf", "font/otf"},
+        {"pdf", "application/pdf"},
+    };
 
     typedef std::variant<std::string, Response> HttpResponse;
     typedef std::function<HttpResponse(Request &)> FunctionHandler;
