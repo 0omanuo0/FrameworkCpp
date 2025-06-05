@@ -245,8 +245,9 @@ private:
     std::string ip_;
 
     // SSL variables (NOT WORKING)
-    // SSL_CTX *ctx_ = nullptr;
-    // std::string ssl_context_[2];
+    std::string ssl_context_[2];
+    bool ssl_enabled_ = false;
+    std::shared_ptr<TlsServer> tlsServer_ = nullptr;
 
     // server modules
     std::shared_ptr<Templating> template_render;
@@ -278,6 +279,7 @@ public:
     server_types::HttpServerDefaults defaults;
     logging logger_;
 
+    HttpServer(const std::string &ip, int port);
     HttpServer(const std::string &ip, int port, const std::string ssl_context[]);
     HttpServer() : HttpServer("127.0.0.1", 5000, std::array<std::string, 2>{std::string(""), std::string("")}.data()) {}
 
