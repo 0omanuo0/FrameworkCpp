@@ -23,7 +23,7 @@ class Templating
 {
 private:
     const std::regex statement_pattern = std::regex(R"(\{\%\s+([^{}]+)\s+\%\})");
-    const std::regex expression_pattern = std::regex(R"(\{\{\s*([^{}]+)\s*\}\})");
+    const std::regex expression_pattern = std::regex(R"(\{\{\s*([^{}\s][^{}]*?[^\s{}]|[^{}\s])\s*\}\})");
 
     const std::regex if_pattern = std::regex(R"(\bif\s+([^{}]+)\s*)");
     const std::regex elif_pattern = std::regex(R"(\belif\s+([^{}]+)\s*)");
@@ -33,7 +33,8 @@ private:
     const std::regex for_pattern = std::regex(R"(\bfor\s+([^{}]+)\s*)");
     const std::regex endfor_pattern = std::regex(R"(\s*endfor\s*)");
 
-    const std::regex include_pattern = std::regex(R"(\binclude\s+"([^"]*)\s*)");
+    const std::regex include_pattern = std::regex(R"(\binclude\s+["']([^"']+)["'])");
+
 
 
     Block BlockParser(std::istream &stream, Block parent = Block());
