@@ -27,7 +27,7 @@ inline std::string convert_to_html(const std::string &msg)
     return html;
 }
 
-inline nlohmann::json block_to_json(const Block &block)
+nlohmann::json Templating::block_to_json(const Block &block)
 {
     nlohmann::json j_block;
     j_block["type"] = blockTypeToString.at(block.type); // Convertir BlockType a string
@@ -54,7 +54,16 @@ inline nlohmann::json block_to_json(const Block &block)
         j_subBlock["children"] = nlohmann::json::array();
         for (const auto &child : subBlock.children)
         {
+            // if is include, find the include
+            if (child.type == BlockType::INCLUDE)
+            {
+                auto block = this->cachedTemplating[child.expression].content;
+                j_subBlock["children"].push_back(block_to_json(block));
+            }
+            else
+            {
             j_subBlock["children"].push_back(block_to_json(child));
+        }
         }
         j_block["subBlocks"].push_back(j_subBlock);
     }
@@ -62,7 +71,16 @@ inline nlohmann::json block_to_json(const Block &block)
     j_block["children"] = nlohmann::json::array();
     for (const auto &child : block.children)
     {
+        if (child.type == BlockType::INCLUDE)
+        {
+            auto block = this->cachedTemplating[child.expression].content;
+            block.type = BlockType::INCLUDE;
+            j_block["children"].push_back(block_to_json(block));
+        }
+        else
+        {
         j_block["children"].push_back(block_to_json(child));
+    }
     }
     return j_block;
 }

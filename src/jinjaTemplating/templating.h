@@ -50,6 +50,8 @@ private:
     std::map<std::string, CachedFile> cachedTemplating;
     bool storeCache;
 
+    nlohmann::json block_to_json(const Block &block);
+    std::string render_error(const std::string &msg, const StackTrace &stack_trace, std::string file, int line, nlohmann::json json_data = {}, const Block &block = Block());
     
 public:
 #ifdef SERVER_H
