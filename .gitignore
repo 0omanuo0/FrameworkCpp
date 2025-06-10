@@ -8,6 +8,14 @@ bin/
 release/
 static/
 secrets/
+
+public/
+a.cpp
+a
+test.db
+test.py
+*.cache
+
 # uvw/
 
 *.pem

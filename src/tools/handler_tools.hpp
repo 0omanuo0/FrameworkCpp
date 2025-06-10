@@ -63,22 +63,22 @@ inline std::string compressData(const std::string &data)
     return compressedData;
 }
 
-inline void _send_response(std::shared_ptr<uvw::TCPHandle> client, const std::string &response)
-{
-    // In some production cases, partial writes need to be handled if the data is large.
-    // uvw can queue writes, but we demonstrate the simpler approach here.
-    if (!client || !client->active())
-    {
-        return; // Client might be closed or invalid
-    }
+// inline void _send_response(std::shared_ptr<uvw::TCPHandle> client, const std::string &response)
+// {
+//     // In some production cases, partial writes need to be handled if the data is large.
+//     // uvw can queue writes, but we demonstrate the simpler approach here.
+//     if (!client || !client->active())
+//     {
+//         return; // Client might be closed or invalid
+//     }
 
-    // If you are writing large data, consider chunking or using client->on<uvw::WriteEvent>()
-    // to handle partial writes. For now, we copy all data at once.
-    auto buffer = std::unique_ptr<char[]>(new char[response.size()]);
-    std::memcpy(buffer.get(), response.data(), response.size());
+//     // If you are writing large data, consider chunking or using client->on<uvw::WriteEvent>()
+//     // to handle partial writes. For now, we copy all data at once.
+//     auto buffer = std::unique_ptr<char[]>(new char[response.size()]);
+//     std::memcpy(buffer.get(), response.data(), response.size());
 
-    client->write(std::move(buffer), response.size());
-}
+//     client->write(std::move(buffer), response.size());
+// }
 
 
 inline bool check_dangerous_route(const std::string &route, const std::string &base_path)

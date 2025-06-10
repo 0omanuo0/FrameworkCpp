@@ -67,7 +67,7 @@ std::string Templating::Render(const std::string &file, const nlohmann::json &da
 #ifdef SERVER_H
         this->server->logger_.error(e.what());
 #endif
-        return render_error(e.what(), e.getStackTrace(), e.getFile(), e.getLine(), {}, root);
+        return render_error(e.what(), e.getStackTrace(), e.getFile(), e.getLine(), dataCopy, root);
     }
     catch (const Templating_RenderError &e)
     {
@@ -85,7 +85,7 @@ std::string Templating::Render(const std::string &file, const nlohmann::json &da
 #ifdef SERVER_H
         this->server->logger_.error(e.what());
 #endif
-        return render_error(e.what(), {}, {}, {}, {}, root);
+        return render_error(e.what(), {}, {}, {}, dataCopy, root);
     }
 }
 

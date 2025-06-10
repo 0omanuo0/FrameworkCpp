@@ -20,13 +20,14 @@ std::string trim(const std::string &str)
 int httpHeaders::loadParams(const std::string &request)
 {
     std::smatch match;
-    const std::regex requestLineRegex(R"(^(\w+)\s+(\S+)\s+HTTP/\d\.\d(\r\n)*)");
+    const std::regex requestLineRegex(R"(^(\w+)\s+(.+)\s+HTTP\/(\d(?:\.\d)?)(\r\n)*)");
     const std::regex queryRegex(R"(^([^\?]+)(\?(.+))?$)");
 
     if (std::regex_search(request, match, requestLineRegex))
     {
         this->method = match[1];
         this->route = match[2];
+        this->http_version = match[3];
     }
 
     if (std::regex_match(this->route, match, queryRegex))

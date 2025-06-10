@@ -27,6 +27,8 @@
 #include "response.hpp"
 #include "request.hpp"
 #include "jinjaTemplating/templating.h"
+#include "TLSserver.hpp"
+#include "httpConnection.hpp"
 
 class Templating;
 
@@ -36,7 +38,20 @@ namespace server_types
         {"js", "application/javascript"},
         {"css", "text/css"},
         {"html", "text/html"},
-        {"txt", "text/plain"}};
+        {"txt", "text/plain"},
+        {"jpg", "image/jpeg"},
+        {"jpeg", "image/jpeg"},
+        {"png", "image/png"},
+        {"webp", "image/webp"},
+        {"gif", "image/gif"},
+        {"svg", "image/svg+xml"},
+        {"ico", "image/x-icon"},
+        {"woff", "font/woff"},
+        {"woff2", "font/woff2"},
+        {"ttf", "font/ttf"},
+        {"otf", "font/otf"},
+        {"pdf", "application/pdf"},
+    };
 
     typedef std::variant<std::string, Response> HttpResponse;
     typedef std::function<HttpResponse(Request &)> FunctionHandler;
@@ -215,23 +230,25 @@ private:
     // server main functions
     void _setup_server();
     void _run_server();
-    int _handle_request(std::string request, std::shared_ptr<uvw::TCPHandle> sslClient);
+    void _run_server_ssl();
+    int _handle_request(std::string request, std::shared_ptr<HttpConnection> conn);
     inline int _route_matcher(const std::string &http_route, std::unordered_map<std::string, server_tools::ParamValue> &url_params);
     int _handle_route(
-        std::shared_ptr<uvw::TCPHandle> sslClient,
+        std::shared_ptr<HttpConnection> conn,
         server_types::Route route,
         Sessions::Session session,
         std::unordered_map<std::string, server_tools::ParamValue> url_params,
         httpHeaders http_headers);
-    int _handle_static_file(std::shared_ptr<uvw::TCPHandle> sslClient, Sessions::Session session, httpHeaders http_headers);
+    int _handle_static_file(std::shared_ptr<HttpConnection> conn, Sessions::Session session, httpHeaders http_headers);
 
     // server variables
     int port_;
     std::string ip_;
 
     // SSL variables (NOT WORKING)
-    // SSL_CTX *ctx_ = nullptr;
-    // std::string ssl_context_[2];
+    std::string ssl_context_[2];
+    bool ssl_enabled_ = false;
+    std::shared_ptr<TlsServer> tlsServer_ = nullptr;
 
     // server modules
     std::shared_ptr<Templating> template_render;
@@ -252,7 +269,7 @@ private:
     int max_age_cache = 86400;
     std::unordered_map<void *, server_types::HttpClient> clients;
 
-    void _send_file_worker(const std::shared_ptr<uvw::TCPHandle> &client,
+    void _send_file_worker(const std::shared_ptr<HttpConnection> &conn,
                            const std::string &path,
                            const std::string &realPath,
                            const std::string &type,
@@ -263,6 +280,7 @@ public:
     server_types::HttpServerDefaults defaults;
     logging logger_;
 
+    HttpServer(const std::string &ip, int port);
     HttpServer(const std::string &ip, int port, const std::string ssl_context[]);
     HttpServer() : HttpServer("127.0.0.1", 5000, std::array<std::string, 2>{std::string(""), std::string("")}.data()) {}
 

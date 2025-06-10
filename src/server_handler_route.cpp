@@ -2,7 +2,7 @@
 #include "tools/complementary_server_functions.hpp"
 #include "tools/handler_tools.hpp"
 
-int HttpServer::_handle_route(std::shared_ptr<uvw::TCPHandle> client,
+int HttpServer::_handle_route(std::shared_ptr<HttpConnection> conn,
                               server_types::Route route,
                               Sessions::Session session,
                               std::unordered_map<std::string, server_tools::ParamValue> url_params,
@@ -19,7 +19,7 @@ int HttpServer::_handle_route(std::shared_ptr<uvw::TCPHandle> client,
     catch (const std::exception &ex)
     {
         this->logger_.error("Error while handling the request", ex.what());
-        _send_response(client, this->defaults.getInternalServerError().generateResponse());
+        conn->_send_response( this->defaults.getInternalServerError().generateResponse());
 
         this->logger_.log(http_headers.getMethod() + " " + http_headers.getRoute() +
                               " " + http_headers.getQuery(),
@@ -45,7 +45,7 @@ int HttpServer::_handle_route(std::shared_ptr<uvw::TCPHandle> client,
     response.addSessionCookie(this->sessions_->default_session_name,
                               this->sessions_->generateJWT(session.getId()));
 
-    auto &client_data = this->clients[client.get()];
+    auto &client_data = this->clients[conn->getClient()];
     if (!client_data.keep_alive)
     {
         response.addHeader("Connection", "close");
@@ -85,7 +85,7 @@ int HttpServer::_handle_route(std::shared_ptr<uvw::TCPHandle> client,
         this->static_routes[rindex] = {false, response};
     }
 
-    _send_response(client, responseStr);
+    conn->_send_response(responseStr);
 
     // If keep-alive is disabled, close the connection
     // if (!client_data.keep_alive) {
