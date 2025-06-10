@@ -53,7 +53,7 @@ std::string Templating::Render(const std::string &file, const nlohmann::json &da
 
         if (this->storeCache)
         {
-            // store all the cachedTemplating as byte array in templating.cache
+            // store all the cachedTemplating as byte array in templating.cache !!!!!!!!!!!!!!!!!! NOT IMPLEMENTED
             std::ofstream cacheFile("templating.cache", std::ios::binary);
             cacheFile.write((char *)&cachedTemplating, sizeof(cachedTemplating));
 
@@ -64,12 +64,16 @@ std::string Templating::Render(const std::string &file, const nlohmann::json &da
     }
     catch (const Templating_ParserError &e)
     {
-        this->server->logger.error(e.what());
-        return "";
+#ifdef SERVER_H
+        this->server->logger_.error(e.what());
+#endif
+        return render_error(e.what(), e.getStackTrace(), e.getFile(), e.getLine(), dataCopy, root);
     }
     catch (const Templating_RenderError &e)
     {
-        this->server->logger.error(e.what());
+#ifdef SERVER_H
+        this->server->logger_.error(e.what());
+#endif
         auto data_ = e.getData();
         if (data_.is_null())
             data_ = data;
@@ -78,8 +82,10 @@ std::string Templating::Render(const std::string &file, const nlohmann::json &da
     }
     catch (const std::exception &e)
     {
-        this->server->logger.error(e.what());
-        return "";
+#ifdef SERVER_H
+        this->server->logger_.error(e.what());
+#endif
+        return render_error(e.what(), {}, {}, {}, dataCopy, root);
     }
 }
 
@@ -132,162 +138,6 @@ std::vector<int> Templating::findChildren(Block block, int lineN)
     return indices;
 }
 
-std::string Templating::__Render(Block block, nlohmann::json &data)
-{
-    std::string result = "";
-    int size = block.content.size() + block.children.size();
-
-    for (size_t lineN = 0; lineN < size; lineN++)
-    {
-
-        for (auto &index : this->findChildren(block, lineN))
-        {
-            Block &childBlock = block.children[index];
-
-            switch (childBlock.type)
-            {
-            case BlockType::IF:
-                result += this->__renderIfBlock(childBlock, data);
-                break;
-
-            case BlockType::FOR:
-                result += this->__renderForBlock(childBlock, data);
-                break;
-
-            case BlockType::INCLUDE:
-                result += this->__Render(childBlock, data);
-                break;
-
-            default:
-                throw Templating_ParserError("Invalid block type", block);
-                break;
-            }
-        }
-
-        if (lineN < block.content.size())
-        {
-            result += this->__renderExpressions(block.content[lineN], data) + "\n";
-        }
-    }
-
-    return result;
-}
-
-std::string Templating::__renderIfBlock(Block &ifBlock, nlohmann::json &data)
-{
-    // Lambda function to create a new Block from a SubBlock
-    auto createBlock = [&](SubBlock &subBlock)
-    {
-        Block newBlock;
-        newBlock.type = BlockType::SUBBLOCK;
-        newBlock.content = subBlock.content;
-        newBlock.children = subBlock.children;
-        newBlock.compiledExpression.compile(subBlock.expression);
-        return newBlock;
-    };
-    ifBlock.compiledExpression.set_variables(convert_to_variant_map(data));
-    auto r = ifBlock.compiledExpression.eval().toNumber();
-    // Evaluate the main ifBlock expression
-    if ((bool)r)
-    {
-        return this->__Render(ifBlock, data);
-    }
-    else
-    {
-        // Iterate through subBlocks (ELIF and ELSE)
-        for (auto &subBlock : ifBlock.subBlocks)
-        {
-            subBlock.compiledExpression.set_variables(convert_to_variant_map(data));
-
-            if (subBlock.type == SubBlockType::ELIF && (bool)subBlock.compiledExpression.eval().toNumber())
-            {
-                auto newBlock = createBlock(subBlock);
-                return this->__Render(newBlock, data);
-            }
-            else if (subBlock.type == SubBlockType::ELSE)
-            {
-                auto newBlock = createBlock(subBlock);
-                return this->__Render(newBlock, data);
-            }
-            else
-                throw Templating_RenderError("Invalid subblock type", ifBlock, {}, __builtin_FILE(), __builtin_LINE());
-        }
-    }
-    return "";
-}
-
-std::string Templating::__renderForBlock(Block &forBlock, nlohmann::json &data)
-{
-    std::string result = "";
-    std::string expression = forBlock.expression;
-    std::string value = expression.substr(0, expression.find(" in "));
-    std::string iterable = expression.substr(expression.find(" in ") + 4);
-
-    // Handle range-based loops (e.g., "i in range(0, 10)")
-    auto range = process_range(iterable, data);
-    long n = range.first;
-    long m = range.second;
-
-    if (n >= 0 && m > 0 && n < m)
-    {
-        for (long i = n; i < m; i++)
-        {
-            data[value] = i;
-            result += this->__Render(forBlock, data);
-        }
-
-        return result;
-    }
-    else if (n != -1 && m != -1)
-        throw Templating_RenderError("Invalid range: " + iterable, forBlock, __builtin_FILE(), __builtin_LINE());
-
-    // Handle JSON array or object-based loops
-    // get the value and the filters
-    auto exprEval = expr(iterable);
-    const auto data_as_map = data.get<std::unordered_map<std::string, nlohmann::json>>();
-    exprEval.set_variables(convert_to_variant_map(data_as_map));
-    exprEval.compile();
-    const auto it = exprEval.eval();
-
-    if (it.is_array())
-    {
-        // Iterate over JSON array
-        auto values = it.toJson().get<std::vector<json_t>>();
-        for (auto &item : values)
-        {
-            data[value] = item;
-            result += this->__Render(forBlock, data);
-        }
-    }
-    else if (it.is_object())
-    {
-        // Iterate over JSON object
-        auto values = it.toJson().get<std::unordered_map<std::string, json_t>>();
-        if (values.empty())
-            throw Templating_RenderError("Invalid iterable: " + iterable + " is not an object", forBlock, __builtin_FILE(), __builtin_LINE(), data);
-        for (auto &item : values)
-        {
-            auto allData = data;
-            if (data.contains(value))
-                throw std::runtime_error("The variable " + value + " already exists in the data");
-            allData[value] = item.second;
-            result += this->__Render(forBlock, allData);
-        }
-    }
-    else if (it.isString())
-    {
-        // Iterate over characters in a string
-        for (auto &item : it.toString())
-        {
-            data[value] = item;
-            result += this->__Render(forBlock, data);
-        }
-    }
-    else
-        throw Templating_RenderError("Invalid iterable: " + iterable + " is not an array or an object", forBlock, __FILE__, __LINE__);
-
-    return result;
-}
 
 Block Templating::BlockParser(std::istream &stream, Block parent)
 {
@@ -317,13 +167,15 @@ Block Templating::BlockParser(std::istream &stream, Block parent)
 
             if (std::regex_search(statement, match, include_pattern))
             {
-                std::ifstream file(match[1].str());
+                auto path = match[1].str();
+                std::ifstream file(path);
                 if (!file)
                     throw std::filesystem::filesystem_error("Error opening file: " + match[1].str(), std::make_error_code(std::errc::no_such_file_or_directory));
 
-                Block newBlock = createBlock(BlockType::INCLUDE, block.content.size(), match[1].str());
-                newBlock = this->BlockParser(file, newBlock);
-                block.children.push_back(newBlock);
+                this->cachedTemplating[path] = generateCache(path);
+
+                Block includeBlock = createBlock(BlockType::INCLUDE, block.content.size(), path);
+                block.children.push_back(includeBlock);
 
                 file.close();
             }
@@ -362,10 +214,10 @@ Block Templating::BlockParser(std::istream &stream, Block parent)
                 subBlock.type = SubBlockType::ELSE;
                 block.subBlocks.push_back(subBlock);
             }
-            else if (std::regex_search(statement, match, endif_pattern) && block.type == BlockType::IF || std::regex_search(statement, match, endfor_pattern) && block.type == BlockType::FOR)
+            else if ((std::regex_search(statement, match, endif_pattern) && block.type == BlockType::IF) || (std::regex_search(statement, match, endfor_pattern) && block.type == BlockType::FOR))
                 return block;
             else
-                throw Templating_ParserError("Invalid statement: " + statement, block);
+                throw Templating_ParserError("Invalid statement: " + statement, block, __builtin_FILE(), __builtin_LINE());
         }
         else
         {
@@ -435,9 +287,179 @@ std::string Templating::__renderExpressions(std::string expression, nlohmann::js
         expressionEval.set_variables(a);
         expressionEval.set_functions({{"urlfor", {url_for_function, 1}}});
         expressionEval.compile();
-        const auto result = expressionEval.eval().toString(true);
+        try
+        {
+            auto result = expressionEval.eval().toString(true);
+            return resultString + result + right;
+        }
+        catch (const std::exception &e)
+        {
+            throw Templating_RenderError("Error evaluating expression: " + value, __builtin_FILE(), __builtin_LINE(), data);
+        }
 
-        return resultString + result + right;
+        
     }
     return expression;
+}
+
+
+std::string Templating::__Render(Block block, nlohmann::json &data)
+{
+    std::string result = "";
+    size_t size = block.content.size() + block.children.size();
+
+    for (size_t lineN = 0; lineN < size; lineN++)
+    {
+
+        for (auto &index : this->findChildren(block, lineN))
+        {
+            Block &childBlock = block.children[index];
+
+            switch (childBlock.type)
+            {
+            case BlockType::IF:
+                result += this->__renderIfBlock(childBlock, data);
+                break;
+
+            case BlockType::FOR:
+                result += this->__renderForBlock(childBlock, data);
+                break;
+
+            case BlockType::INCLUDE:
+            {
+                auto rootInclude = this->cachedTemplating[childBlock.expression].content;
+                result += this->__Render(rootInclude, data);
+                break;
+            }
+
+            default:
+                throw Templating_ParserError("Invalid block type", block);
+                break;
+            }
+        }
+
+        if (lineN < block.content.size())
+        {
+            result += this->__renderExpressions(block.content[lineN], data) + "\n";
+        }
+    }
+
+    return result;
+}
+
+std::string Templating::__renderIfBlock(Block &ifBlock, nlohmann::json &data)
+{
+    // Lambda function to create a new Block from a SubBlock
+    auto createBlock = [&](SubBlock &subBlock)
+    {
+        Block newBlock;
+        newBlock.type = BlockType::SUBBLOCK;
+        newBlock.content = subBlock.content;
+        newBlock.children = subBlock.children;
+        newBlock.compiledExpression.compile(subBlock.expression);
+        return newBlock;
+    };
+    ifBlock.compiledExpression.set_variables(convert_to_variant_map(data));
+    auto r = ifBlock.compiledExpression.eval().toNumber();
+    // Evaluate the main ifBlock expression
+    if ((bool)r)
+    {
+        return this->__Render(ifBlock, data);
+    }
+    else
+    {
+        // Iterate through subBlocks (ELIF and ELSE)
+        for (auto &subBlock : ifBlock.subBlocks)
+        {
+            subBlock.compiledExpression.set_variables(convert_to_variant_map(data));
+
+            if (subBlock.type == SubBlockType::ELIF && (bool)subBlock.compiledExpression.eval().toNumber())
+            {
+                auto newBlock = createBlock(subBlock);
+                return this->__Render(newBlock, data);
+            }
+            else if (subBlock.type == SubBlockType::ELSE)
+            {
+                auto newBlock = createBlock(subBlock);
+                return this->__Render(newBlock, data);
+            }
+            else
+                throw Templating_RenderError("Invalid subblock type", ifBlock, {}, __builtin_FILE(), __builtin_LINE());
+        }
+    }
+    return "";
+}
+
+std::string Templating::__renderForBlock(Block &forBlock, nlohmann::json &data)
+{
+    // std::cout << "data: " << data.dump() << std::endl;
+    std::string result = "";
+    std::string expression = forBlock.expression;
+    std::string value = expression.substr(0, expression.find(" in "));
+    std::string iterable = expression.substr(expression.find(" in ") + 4);
+
+    // Handle range-based loops (e.g., "i in range(0, 10)")
+    auto range = process_range(iterable, data);
+    long n = range.first;
+    long m = range.second;
+
+    if (n >= 0 && m > 0 && n < m)
+    {
+        for (long i = n; i < m; i++)
+        {
+            data[value] = i;
+            result += this->__Render(forBlock, data);
+        }
+
+        return result;
+    }
+    else if (n != -1 && m != -1)
+        throw Templating_RenderError("Invalid range: " + iterable, forBlock, __builtin_FILE(), __builtin_LINE());
+
+    // Handle JSON array or object-based loops
+    // get the value and the filters
+    auto exprEval = expr(iterable);
+    const auto data_as_map = data.get<std::unordered_map<std::string, nlohmann::json>>();
+    exprEval.set_variables(convert_to_variant_map(data_as_map));
+    exprEval.compile();
+    const auto it = exprEval.eval();
+
+    if (it.is_array())
+    {
+        // Iterate over JSON array
+        auto values = it.toJson().get<std::vector<json_t>>();
+        for (auto &item : values)
+        {
+            data[value] = item;
+            result += this->__Render(forBlock, data);
+        }
+    }
+    else if (it.is_object())
+    {
+        // Iterate over JSON object
+        auto values = it.toJson().get<std::unordered_map<std::string, json_t>>();
+        if (values.empty())
+            throw Templating_RenderError("Invalid iterable: " + iterable + " is not an object", forBlock, __builtin_FILE(), __builtin_LINE(), data);
+        for (auto &item : values)
+        {
+            auto allData = data;
+            if (data.contains(value))
+                throw std::runtime_error("The variable " + value + " already exists in the data");
+            allData[value] = item.second;
+            result += this->__Render(forBlock, allData);
+        }
+    }
+    else if (it.isString())
+    {
+        // Iterate over characters in a string
+        for (auto &item : it.toString())
+        {
+            data[value] = item;
+            result += this->__Render(forBlock, data);
+        }
+    }
+    else
+        throw Templating_RenderError("Invalid iterable: " + iterable + " is not an array or an object", forBlock, __FILE__, __LINE__);
+
+    return result;
 }

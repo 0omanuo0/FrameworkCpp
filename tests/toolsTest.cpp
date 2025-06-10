@@ -1,6 +1,6 @@
 #include "gtest/gtest.h"
-#include "tools/idGenerator.h"
-#include "tools/url_encoding.h"
+#include "tools/idGenerator.hpp"
+#include "tools/url_encoding.hpp"
 
 TEST(ToolsTest, generate_uuid_v4)
 {

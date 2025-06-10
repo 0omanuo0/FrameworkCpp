@@ -20,6 +20,7 @@ foreach(TEST_SOURCE ${TEST_SOURCES})
     # Extraer el nombre del test (sin extensión) para usarlo como nombre del ejecutable
     get_filename_component(TEST_NAME ${TEST_SOURCE} NAME_WE)
 
+
     # Crear un ejecutable para cada archivo de prueba
     add_executable(${TEST_NAME} ${TEST_SOURCE})
 
@@ -30,12 +31,7 @@ foreach(TEST_SOURCE ${TEST_SOURCES})
         pthread 
         httpserver_lib
         my_expr_lib
-        ssl 
-        crypto 
-        sqlite3 
-        curl 
-        stdc++fs 
-        dl
+        uv sqlite3 curl stdc++fs dl uvw
     )
 
     # Registrar el ejecutable como una prueba

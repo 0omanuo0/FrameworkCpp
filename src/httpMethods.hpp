@@ -9,8 +9,8 @@
 #include <variant>
 
 #include <iostream>
-#include "tools/url_encoding.h"
-#include "jinjaTemplating/my_expr/my_expr/json.hpp"
+#include "tools/url_encoding.hpp"
+#include "tools/json.hpp"
 #include <algorithm>
 #include <cctype>
 
@@ -256,6 +256,74 @@ public:
         else if (std::is_same<T, std::string>::value && isJson())
             return std::get<nlohmann::json>(contentData).dump();
     }
+
+    Content(const Content &other)
+    {
+        if (this != &other)
+        {
+            switch (other.contentData.index())
+            {
+            case 0:
+                contentData = std::get<std::string>(other.contentData);
+                break;
+            case 1: 
+                contentData = std::get<std::map<std::string, std::string>>(other.contentData);
+                break;
+            case 2:
+                contentData = std::get<std::vector<char>>(other.contentData);
+                break;
+            case 3: 
+                contentData = std::get<nlohmann::json>(other.contentData);
+                break;
+            default:
+                contentData = std::string();
+                break;
+            }
+            content_type = other.content_type;
+        }
+    }
+
+    Content(Content &&other) noexcept
+    {
+        contentData = std::move(other.contentData);
+        content_type = other.content_type;
+    }
+
+    Content &operator=(Content &&other) noexcept
+    {
+        contentData = std::move(other.contentData);
+        content_type = other.content_type;
+        return *this;
+    }
+
+    Content &operator=(const Content &other)
+    {
+        if (this != &other)
+        {
+            contentValue cD = (contentData.index() == std::variant_npos) ? std::string() : contentData;
+            contentData = cD;   // Copy the content data
+            content_type = other.content_type; // Copy the content type
+        }
+        return *this;
+    }
+
+    // Content(const Content &other)
+    // {
+    //     contentData = other.contentData;   // Copy the content data
+    //     content_type = other.content_type; // Copy the content type
+    // }
+
+    ~Content()
+    {
+        if (isByteArray())
+            std::get<std::vector<char>>(contentData).clear();
+        if (isDict())
+            std::get<std::map<std::string, std::string>>(contentData).clear();
+        if (isJson())
+            std::get<nlohmann::json>(contentData).clear();
+        if (isString())
+            std::get<std::string>(contentData).clear();
+    }
 };
 
 struct HttpRequest
@@ -273,6 +341,7 @@ private:
 
     std::string method;
     std::string route;
+    std::string http_version;
     std::string query;
     Content body;
 
@@ -301,5 +370,10 @@ public:
     httpHeaders(std::string req) { loadParams(req); };
 
     int loadParams(const std::string &request);
+
+    httpHeaders(const httpHeaders &) = default;
+    httpHeaders(httpHeaders &&) noexcept = default;
+    httpHeaders &operator=(const httpHeaders &) = default;
+    httpHeaders &operator=(httpHeaders &&) noexcept = default;
 };
 #endif

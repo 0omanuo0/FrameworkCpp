@@ -1,23 +1,32 @@
 #include <iostream>
-#include "src/server.h"
-#include "src/usersdb.h"
+#include "src/server.hpp"
+#include "db.hpp"
 #include "src/curl.h"
-
-
+#include <ctime>
 
 using json = nlohmann::json;
 using namespace std;
 
-const int PORT = 8444;
+
 
 CurlHandler curl;
 
-string HTTPScontext[] = {"secrets/cert.pem", "secrets/key.pem"};
+HttpServer server("0.0.0.0", 8444, HTTPScontext);
+SoriaDB db("secrets/users.db");
 
-HttpServer server(PORT,  "172.30.50.94");
-UsersDB DATABASE("secrets/users.db");
+vector<json> getPosts()
+{
+    vector<unordered_map<string, string>> db_posts = db.fetchall("SELECT * FROM POSTS ORDER BY ID DESC");
+    vector<json> POSTS;
+    for (const auto &post : db_posts)
+    {
+        json p = {{"user", post.at("autor")}, {"post", post.at("contenido")}};
+        POSTS.push_back(p);
+    }
+    return POSTS;
+}
 
-types::HttpResponse showApiData(Request &req)
+server_types::HttpResponse showApiData(Request &req)
 {
     auto data = curl.get("https://api.open-meteo.com/v1/forecast?latitude=52.52&longitude=13.41&hourly=temperature_2m", {"Content-Type: application/json"});
     nlohmann::json json_data = nlohmann::json::parse(data);
@@ -42,12 +51,11 @@ types::HttpResponse showApiData(Request &req)
     return server.Render("templates/api_data.html", {{"data", temps}});
 }
 
-types::HttpResponse apiHome(Request &req)
+server_types::HttpResponse apiHome(Request &req)
 {
     std::string url = "https://api.open-meteo.com/v1/forecast?latitude=52.52&longitude=13.41&hourly=temperature_2m";
     std::vector<std::string> headers = {
-        "Content-Type: application/json"
-    };
+        "Content-Type: application/json"};
 
     std::string response = curl.get(url, headers);
 
@@ -57,21 +65,21 @@ types::HttpResponse apiHome(Request &req)
     return Response(res, 200, {{"Content-Type", "application/json"}});
 }
 
-types::HttpResponse home(Request &req)
+server_types::HttpResponse home(Request &req)
 {
     if (req.method == POST)
     {
         if (req.session["logged"] == "true")
         {
-            DATABASE["POSTS"].insertRow({{"autor", req.session["user"]}, {"contenido", req.form["post"]}});
-            vector<json> POSTS;
+            db.exec("INSERT INTO POSTS (autor, contenido, FECHA) VALUES (?, ?, ?)", {req.session["user"], req.form["post"], to_string(time(0))});
+            vector<json> POSTS = getPosts();
             try
             {
-                for (int i = 1; i <= DATABASE["POSTS"].countRows(); i++)
+                for (int i = 1; i <= POSTS.size(); i++)
                 {
-                    unordered_map post1 = DATABASE["POSTS"].getByID(to_string(i));
+                    auto post1 = db.fetchone("SELECT * FROM POSTS WHERE ID = ?", {to_string(i)});
                     // {post1["autor"]}, post1["contenido"]
-                    json p = { {"user", post1["autor"]}, {"post", post1["contenido"]} };
+                    json p = {{"user", post1["autor"]}, {"post", post1["contenido"]}};
                     POSTS.push_back(p);
                 }
             }
@@ -89,13 +97,13 @@ types::HttpResponse home(Request &req)
     {
         if (req.session["logged"] == "true")
         {
-            vector<json> POSTS;
+            vector<json> POSTS = getPosts();
             try
             {
-                for (size_t i = 1; i <= DATABASE["POSTS"].countRows(); i++)
+                for (size_t i = 1; i <= POSTS.size(); i++)
                 {
-                    unordered_map post1 = DATABASE["POSTS"].getByID(to_string(i));
-                    json p = { {"user", post1["autor"]}, {"post", post1["contenido"]} };
+                    auto post1 = POSTS[i];
+                    json p = {{"user", post1["autor"]}, {"post", post1["contenido"]}};
                     POSTS.push_back(p);
                 }
             }
@@ -110,26 +118,31 @@ types::HttpResponse home(Request &req)
         else
             return server.Render("templates/home.html");
     }
+    return server.NotFound();
 }
 
-types::HttpResponse user_account(Request &req)
+server_types::HttpResponse user_account(Request &req)
 {
-    if (req.session["logged"] == "true" && req.parameters["iuserid"] == req.session["user"])
-        return server.Render("templates/user.html", {{"user", req.parameters["iuserid"]}, {"pass", DATABASE.getUser(req.parameters["iuserid"])[2]}});
+    auto u_idt = req.parameters.get<std::string>("iuserid");
+    if (req.session["logged"] == "true" && u_idt == req.session["user"]){
+        auto user = db.fetchone("SELECT * FROM USERS WHERE ID = ?", {u_idt});
+        return server.Render("templates/user.html", {{"user", u_idt}, {"pass", user["pass"]}});
+    }
     else
         return server.Redirect("/login");
 }
 
-types::HttpResponse images(Request &req)
+server_types::HttpResponse images(Request &req)
 {
-    return server.Render("templates/image.html", {{"id", req.parameters["iuserid"]}});
+    auto u_idt = req.parameters.getString("iuserid");
+    return server.Render("templates/image.html", {{"id", u_idt}});
 }
 
-types::HttpResponse login(Request &req)
+server_types::HttpResponse login(Request &req)
 {
     if (req.method == GET)
     {
-        if (req.session["logged"] == "true" )
+        if (req.session["logged"] == "true")
             return server.Redirect("/");
         return server.Render("templates/login.html");
     }
@@ -138,15 +151,15 @@ types::HttpResponse login(Request &req)
         // vector<vector<string>> USERS;
         try
         {
-            vector<string> user = DATABASE.getUser(req.form["fname"]);
+            auto user = db.fetchone("SELECT * FROM USERS WHERE ID = ?", {req.form["fname"]});
 
-            if(user.size() == 0)
+            if (user.size() == 0)
                 return server.Render("templates/login.html", {{"error", "true"}});
 
-            if (crypto_lib::calculateSHA512(req.form["fpass"]) == user[2] && req.form["fname"] == user[1])
+            if (crypto_lib::calculateSHA512(req.form["fpass"]) == user["pass"] && req.form["fname"] == user["user"])
             {
                 req.session["logged"] = "true";
-                req.session["user"] = user[1];
+                req.session["user"] = user["user"];
                 return server.Redirect("/");
             }
             return server.Render("templates/login.html", {{"error", "true"}});
@@ -160,48 +173,41 @@ types::HttpResponse login(Request &req)
     return server.NotFound();
 }
 
-types::HttpResponse logout(Request &req)
+server_types::HttpResponse logout(Request &req)
 {
-    if (req.session["logged"] == "true" )
+    if (req.session["logged"] == "true")
         req.session.destroySession();
     return server.Redirect("/login");
 }
 
+server_types::HttpResponse portfolio(Request &req)
+{
+    // get data from static/content/proj.json
+    std::ifstream file("static/content/proj.json");
+    if (!file.is_open())
+        return server.NotFound();
+    std::string data((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    nlohmann::json json_data = nlohmann::json::parse(data);
+    return server.Render(std::string("templates/portfolio.html"), json_data);
+}
+
 int main(int argc, char **argv)
 {
-    try
-    {
+    server.addRoute("/api", {GET, POST}, apiHome);
+    server.addRoute("/api/<id:int>", {GET, POST}, apiHome);
 
-        // DATABASE["POSTS"].insertRow({{"autor", "manu"}, {"contenido", "HOLA :D"}, {"FECHA", "2022-01-01"}});
-        // DATABASE["POSTS"].insertRow({{"autor", "juan"}, {"contenido", "AAAAAAA"}, {"FECHA", "2022-01-01"}});
-        // DATABASE["POSTS"].insertRow({{"autor", "manu"}, {"contenido", "asdf"}, {"FECHA", "2022-01-01"}});
-        // DATABASE["POSTS"].insertRow({{"autor", "rich"}, {"contenido", "adios"}, {"FECHA", "2022-01-01"}});
-
-        DATABASE.insertUser("manu", {{"pass", crypto_lib::calculateSHA512("asdf1234")}});
-        DATABASE.insertUser("juan", {{"pass", crypto_lib::calculateSHA512("123")}});
-        DATABASE.insertUser("rich", {{"pass", crypto_lib::calculateSHA512("456")}});
-    }
-    catch (const std::exception &e)
-    {
-        std::cerr << e.what() << '\n';
-    }
-
-    server["secret_key"] = uuid::generate_uuid_v4();
-    server["max_connections"] = 10;
-
-    server.addRoute("/api", apiHome, {GET, POST});
-    server.addRoute("/api/<id>", apiHome, {GET, POST});
-
-    server.addRoute("/show", showApiData, {GET, POST});
+    server.addRoute("/show", {GET, POST}, showApiData);
 
     // Ruta sin variables
-    server.addRoute("/home", home, {GET, POST});
-    server.addRoute("/", home, {GET, POST});
-    server.addRoute("/user/<iuserid>", user_account, {GET, POST});
+    server.addRoute("/home", {GET, POST}, home);
+    server.addRoute("/", {GET, POST}, home);
+    server.addRoute("/user/<iuserid>", {GET, POST}, user_account);
 
-    server.addRoute("/login", login, {GET, POST});
-    server.addRoute("/logout", logout, {GET});
-    server.addRoute("/image/<id>", images, {GET});
+    server.addRoute("/login", {GET, POST}, login);
+    server.addRoute("/logout", {GET}, logout);
+    server.addRoute("/image/<id>", {GET}, images);
 
-    server.startListener();
+    server.addRoute("/portfolio", {GET}, portfolio);
+
+    server.run();
 }

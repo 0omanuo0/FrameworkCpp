@@ -8,43 +8,46 @@
 #include <chrono>
 #include <iomanip>
 
-struct timeData
+namespace Logging
 {
-	int year;
-	int month;
-	int day;
-	int hour;
-	int minute;
-	int second;
-};
+	struct timeData
+	{
+		int year;
+		int month;
+		int day;
+		int hour;
+		int minute;
+		int second;
+	};
 
-// return the current timestamp as struct
-inline timeData getCurrentTimestamp()
-{
-	// Obtiene el tiempo actual desde el epoch
-	auto now = std::chrono::system_clock::now();
-	// Convierte el tiempo a time_t para manipularlo como una estructura de tiempo tradicional
-	std::time_t now_time = std::chrono::system_clock::to_time_t(now);
+	// return the current timestamp as struct
+	inline timeData getCurrentTimestamp()
+	{
+		// Obtiene el tiempo actual desde el epoch
+		auto now = std::chrono::system_clock::now();
+		// Convierte el tiempo a time_t para manipularlo como una estructura de tiempo tradicional
+		std::time_t now_time = std::chrono::system_clock::to_time_t(now);
 
-	// Convierte el tiempo a una estructura de tiempo
-	struct tm *time = std::localtime(&now_time);
+		// Convierte el tiempo a una estructura de tiempo
+		struct tm *time = std::localtime(&now_time);
 
-	return {
-		time->tm_year + 1900,
-		time->tm_mon + 1,
-		time->tm_mday,
-		time->tm_hour,
-		time->tm_min,
-		time->tm_sec};
+		return {
+			time->tm_year + 1900,
+			time->tm_mon + 1,
+			time->tm_mday,
+			time->tm_hour,
+			time->tm_min,
+			time->tm_sec};
+	}
+
+	enum LogLevel
+	{
+		ERROR = 1,
+		WARNING = 2,
+		INFO = 3,
+		DEBUG_L = 4
+	};
 }
-
-enum LogLevel
-{
-	ERROR = 1,
-	WARNING = 2,
-	INFO = 3,
-	DEBUG_L = 4
-};
 
 class logging
 {
@@ -106,7 +109,7 @@ private:
 		return -1;
 	}
 
-	void replaceData(std::string &stream, const std::string &logMessage, const std::string &logData, const timeData &time, const int &logType)
+	void replaceData(std::string &stream, const std::string &logMessage, const std::string &logData, const Logging::timeData &time, const int &logType)
 	{
 		replacer(stream, "[CONTENT]", logData, 9);
 
@@ -125,20 +128,21 @@ private:
 		replacer(stream, "[LEVEL]", getLogLevel(logType), 7);
 	}
 
-	void prototypeLog(const LogLevel &logType, const std::string &logMessage, const std::string &logData = "")
+	void prototypeLog(const Logging::LogLevel &logType, const std::string &logMessage, const std::string &logData = "")
 	{
-		if(!DEBUG_LOG && logType == LogLevel::DEBUG_L) return;
+		if (!DEBUG_LOG && logType == Logging::LogLevel::DEBUG_L)
+			return;
 		if (this->logLevel == 0)
 			return;
-        auto l = (int)logType;
-        auto a = logType != LogLevel::DEBUG_L;
-		if (this->logLevel < (int)logType && logType != LogLevel::DEBUG_L)
+		auto l = (int)logType;
+		auto a = logType != Logging::LogLevel::DEBUG_L;
+		if (this->logLevel < (int)logType && logType != Logging::LogLevel::DEBUG_L)
 			return;
 
 		std::string logResult = this->logStructure;
 		std::string logLevel = getLogLevel(logType);
 
-		timeData time = getCurrentTimestamp();
+		Logging::timeData time = Logging::getCurrentTimestamp();
 
 		replaceData(logResult, logMessage, logData, time, logType);
 
@@ -147,7 +151,7 @@ private:
 			try
 			{
 				std::ofstream logFile(this->logFile, std::ios::app);
-				logFile << logResult << "\n";
+				logFile << logResult << '\n';
 				logFile.close();
 			}
 			catch (const std::exception &e)
@@ -155,7 +159,7 @@ private:
 				std::cerr << e.what() << '\n';
 			}
 		}
-		std::cout << logResult << "\n";
+		std::cout << logResult << std::endl;
 	}
 
 public:
@@ -178,14 +182,15 @@ public:
 	{
 		this->logLevel = level;
 		this->logStructure = logStructure;
-        this->storeLog = logFile.empty() ? false : true;
+		this->storeLog = logFile.empty() ? false : true;
 
-        if(this->storeLog){
-            // check if the file exists and create it if it doesn't
-            std::ofstream file(logFile, std::ios::app);
-            file.close();
-        }
-        this->logFile = logFile;
+		if (this->storeLog)
+		{
+			// check if the file exists and create it if it doesn't
+			std::ofstream file(logFile, std::ios::app);
+			file.close();
+		}
+		this->logFile = logFile;
 	}
 
 	/// @brief Print a log message
@@ -193,7 +198,7 @@ public:
 	/// @param data additional data to log
 	void log(const std::string &message, const std::string &data = "")
 	{
-		prototypeLog(INFO, message, data);
+		prototypeLog(Logging::INFO, message, data);
 	}
 
 	/// @brief Print a warning message
@@ -201,29 +206,29 @@ public:
 	/// @param data additional data to log
 	void warning(const std::string &message, const std::string &data = "")
 	{
-		prototypeLog(WARNING, message, data);
+		prototypeLog(Logging::WARNING, message, data);
 	}
 
-    /// @brief Print an error message
-    /// @param message string with the message to log
-    /// @param data additional data to log
+	/// @brief Print an error message
+	/// @param message string with the message to log
+	/// @param data additional data to log
 	void error(const std::string &message, const std::string &data = "")
 	{
-		prototypeLog(ERROR, message, data);
+		prototypeLog(Logging::ERROR, message, data);
 	}
 
-    /// @brief Print a debug message
-    /// @param message string with the message to log
-    /// @param data additional data to log
+	/// @brief Print a debug message
+	/// @param message string with the message to log
+	/// @param data additional data to log
 	void debug(const std::string &message, const std::string &data = "")
 	{
-		prototypeLog(INFO, message, data);
+		prototypeLog(Logging::INFO, message, data);
 	}
 
 	class LogStream
 	{
 	public:
-		LogStream(logging &logger, LogLevel level) : logger(logger), level(level) {}
+		LogStream(logging &logger, Logging::LogLevel level) : logger(logger), level(level) {}
 
 		// Sobrecarga del operador << para manejar diferentes tipos de contenido
 		template <typename T>
@@ -241,28 +246,28 @@ public:
 
 	private:
 		logging &logger;
-		LogLevel level;
+		Logging::LogLevel level;
 		std::ostringstream stream;
 	};
 
 	LogStream log()
 	{
-		return LogStream(*this, LogLevel::INFO);
+		return LogStream(*this, Logging::LogLevel::INFO);
 	}
 
 	LogStream warning()
 	{
-		return LogStream(*this, LogLevel::WARNING);
+		return LogStream(*this, Logging::LogLevel::WARNING);
 	}
 
 	LogStream error()
 	{
-		return LogStream(*this, LogLevel::ERROR);
+		return LogStream(*this, Logging::LogLevel::ERROR);
 	}
 
 	LogStream debug()
 	{
-		return LogStream(*this, LogLevel::DEBUG_L);
+		return LogStream(*this, Logging::LogLevel::DEBUG_L);
 	}
 };
 

@@ -2,6 +2,7 @@
 #include <gtest/gtest.h>
 #include "jinjaTemplating/templating.h"
 
+
 const nlohmann::json dataJson = R"(
     {
         "users": [

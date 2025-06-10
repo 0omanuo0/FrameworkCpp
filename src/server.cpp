@@ -1,324 +1,336 @@
-#include "server.h"
+
+#include "server.hpp"
+#include "tools/complementary_server_functions.hpp"
 #include "jinjaTemplating/templating.h"
 
-HttpServer::HttpServer()
+void HttpServer::_setup_server()
 {
-    template_render->server = this;
-}
-
-struct in_addr hostnameToIp(const char *hostname)
-{
-    struct hostent *hostInfo = gethostbyname(hostname);
-    struct in_addr addr;
-
-    if (hostInfo == nullptr)
+    this->loop_ = uvw::Loop::getDefault();
+    this->server_ = loop_->resource<uvw::TCPHandle>();
+    this->server_->bind(this->ip_, this->port_);
+    this->sessions_ = std::make_shared<SessionsManager>(uuid::generate_uuid_v4());
+    if (this->ssl_enabled_)
     {
-        throw runtime_error("Error: Unable to resolve hostname.");
-        // You might want to handle the error more gracefully
-        exit(1);
+        SSL_CTX *sslCtx = TlsServer::init(this->loop_, this->ssl_context_[0], this->ssl_context_[1]);
+        this->tlsServer_ = std::make_shared<TlsServer>(this->loop_, sslCtx);
     }
-
-    addr.s_addr = *(reinterpret_cast<unsigned long *>(hostInfo->h_addr));
-    return addr;
+    this->template_render = std::make_shared<Templating>();
+    this->template_render->server = this;
 }
 
-HttpServer::HttpServer(int port_server, char *hostname)
-    : port(port_server)
+HttpServer::HttpServer(const std::string &ip, int port)
+    : workerPool_(4, taskQueue_)
 {
-    host = hostname;
-    // Convierte la dirección IP en formato de cadena a representación binaria
-    ip_host_struct = hostnameToIp(host);
-
-    template_render = new Templating();
-    template_render->server = this;
-}
-HttpServer::HttpServer(int port_server, const string SSLcontext_server[], char *hostname )
-    : port(port_server)
-{
-    host = hostname;
-    // Convierte la dirección IP en formato de cadena a representación binaria
-    ip_host_struct = hostnameToIp(host);
-    context.certificate = SSLcontext_server[0];
-    context.private_key = SSLcontext_server[1];
-    HTTPS = true;
-
-    template_render = new Templating();
-    template_render->server = this;
+    this->ip_ = ip;
+    this->port_ = port;
 }
 
-// string HttpServer::Render(const string &route, map<string, string> data)
-// {
-//     return template_render->Render(route, data);
-// };
-
-string HttpServer::Render(const string &route, nlohmann::json data)
+HttpServer::HttpServer(const std::string &ip, int port, const std::string ssl_context[])
+    : workerPool_(4, taskQueue_)
 {
-    return template_render->Render(route, data);
-};
+    this->ip_ = ip;
+    this->port_ = port;
+    this->ssl_context_[0] = ssl_context[0];
+    this->ssl_context_[1] = ssl_context[1];
+    this->ssl_enabled_ = !this->ssl_context_[0].empty() && !this->ssl_context_[1].empty();
+}
 
-string HttpServer::Render(const string &route, const string &data)
+void HttpServer::_run_server()
 {
-    return template_render->Render(route, data);
-};
 
-string HttpServer::RenderString(const string &route, nlohmann::json data)
-{
-    return template_render->RenderString(route, data);
-};
+    // ========== 2. Set up the server to accept new connections ========== //
+    this->server_->on<uvw::ListenEvent>([this](const uvw::ListenEvent &, uvw::TCPHandle &srv)
+                                        {
+        auto client = srv.loop().resource<uvw::TCPHandle>();
 
-void HttpServer::__startListenerSSL()
-{
-    vector<thread> threads;
+        srv.accept(*client);
+        client->read();
 
-    while (true)
-    {
-        // Aceptar una conexión entrante
-        sockaddr_in clientAddress;
-        socklen_t clientAddressSize = sizeof(clientAddress);
+        server_types::HttpClient client_data = {
+            .client = client,
+            .keep_alive = true,
+            .n_requests = 0,
+            .timeout = srv.loop().resource<uvw::TimerHandle>()
+        };
 
-        int clientSocket = accept(serverSocket, reinterpret_cast<sockaddr *>(&clientAddress), &clientAddressSize);
-        if (clientSocket == -1)
+        client_data.timeout->start(uvw::TimerHandle::Time{5000}, uvw::TimerHandle::Time{0});
+        client_data.timeout->on<uvw::TimerEvent>([client_data](const uvw::TimerEvent &, uvw::TimerHandle &)
         {
-            cerr << "Error al aceptar la conexión entrante" << endl;
-            continue;
-        }
+            client_data.client->close();
+        });
 
-        // Crear el objeto SSL
-        SSL *ssl = SSL_new(ssl_ctx);
-        // Asociar el socket con el objeto SSL
-        SSL_set_fd(ssl, clientSocket);
-        // Establecer la conexión SSL
-        if (SSL_accept(ssl) <= 0)
+        this->clients[client.get()] = client_data;
+
+
+        // std::cout << "New client: " << client->peer().ip << std::endl;
+
+        client->on<uvw::DataEvent>([this, client](const uvw::DataEvent &event, uvw::TCPHandle &)
         {
-            cerr << "Error al establecer la conexión SSL." << endl;
-            SSL_free(ssl);
-            close(clientSocket);
-            continue;
-        }
+            // reset timeout
+            this->clients[client.get()].timeout->stop();
+            this->clients[client.get()].timeout->start(uvw::TimerHandle::Time{5000}, uvw::TimerHandle::Time{0});
 
-        // Crear un hilo para manejar la comunicación con el cliente
-        thread thread(&HttpServer::__handle_request, this, move(clientSocket), move(ssl));
-        threads.push_back(move(thread));
-        // Eliminar hilos terminados
-        threads.erase(remove_if(threads.begin(), threads.end(), [](const std::thread &t)
-                                { return !t.joinable(); }),
-                      threads.end());
-    }
-}
+            std::shared_ptr<HttpConnection> conn = std::make_shared<HttpConnection>(client);
 
+            std::string request(event.data.get(), event.length);
+            this->_handle_request(request, conn);
 
-void HttpServer::__startListener()
-{
-    vector<thread> threads;
+            this->clients[client.get()].n_requests++;
+            if (this->clients[client.get()].n_requests > 100)
+            {
+                this->clients[client.get()].client->close();
+            }
+        });
 
-    while (true)
+        client->on<uvw::CloseEvent>([this, client](const uvw::CloseEvent &, uvw::TCPHandle &)
+        { 
+            if (this->clients.find(client.get()) != this->clients.end())
+                this->clients.erase(client.get());
+
+            this->logger_.log("Client disconnected", client->peer().ip);
+            
+        });
+
+        // Handle client errors
+         client->on<uvw::ErrorEvent>([this, client](const uvw::ErrorEvent &event, uvw::TCPHandle &handle) {
+            std::string errStr = event.what();
+            if (errStr == "EPIPE" || errStr == "broken pipe") {
+                // Not an error to kill the server; but log for debugging
+                // this->logger_.debug("Broken pipe on client socket, ignoring.");
+            } else {
+                this->logger_.error("Client error: " + errStr);
+
+                if (this->clients.find(client.get()) != this->clients.end())
+                    this->clients.erase(client.get());
+
+                // Possibly close if it's a critical error
+                if (handle.active()) {
+                    handle.close();
+                }
+            }
+        }); });
+
+    // Handle server errors
+    this->server_->on<uvw::ErrorEvent>([this](const uvw::ErrorEvent &event, uvw::TCPHandle &)
+                                       { this->logger_.error("Server error: " + std::string(event.what())); });
+
+    // Start listening
+    this->server_->listen(1024);
+    this->logger_.log("Server is listening on " + this->ip_ + ":" + std::to_string(this->port_));
+
+    // ========== 3. Run event loop with robust error handling ========== //
+    try
     {
-        // Aceptar una conexión entrante
-        sockaddr_in clientAddress;
-        socklen_t clientAddressSize = sizeof(clientAddress);
-
-        int clientSocket = accept(serverSocket, reinterpret_cast<sockaddr *>(&clientAddress), &clientAddressSize);
-        if (clientSocket == -1)
-        {
-            cerr << "Error al aceptar la conexión entrante" << endl;
-            continue;
-        }
-
-        // Crear un hilo para manejar la comunicación con el cliente
-        SSL *ssl = NULL;
-        thread thread(&HttpServer::__handle_request, this, move(clientSocket), move(ssl));
-        threads.push_back(move(thread));
-        // Eliminar hilos terminados
-        threads.erase(remove_if(threads.begin(), threads.end(), [](const std::thread &t)
-                                { return !t.joinable(); }),
-                      threads.end());
+        // If you want a graceful shutdown, you might loop on run() until a stop flag is set
+        this->loop_->run();
     }
-}
-
-
-void HttpServer::startListener()
-{
-    if (this->__setup() != 0) throw std::runtime_error("Error: setup failed");
-
-    if (HTTPS)
-        this->__startListenerSSL();
-    else
-        this->__startListener();
-}
-
-void HttpServer::setEnv(const std::string &envPath)
-{
-    this->envPath = envPath;
-}
-
-int HttpServer::__loadEnv()
-{
-    // check if exists envPath
-    if (!filesystem::exists(envPath))
+    catch (const std::exception &e)
     {
-        // display that .env not exists so is using default values
-        logger.warning("The .env file does not exist, using default values");
-        return 1;
+        this->logger_.error("Critical error in event loop: " + std::string(e.what()));
     }
-    logger.log("Loading environment variables from .env file");
-
-    std::ifstream file(envPath);
-    if (!file.is_open())return 2;
-
-    std::string line;
-    while (std::getline(file, line))
+    catch (...)
     {
-        std::istringstream is_line(line);
-        std::string key;
-        if(line[0] == '#') continue;
-
-        if (std::getline(is_line, key, '='))
-        {
-            std::string value;
-            if (std::getline(is_line, value)) this->data_[key] = value;
-        }
+        this->logger_.error("Unknown error occurred in the event loop.");
     }
-    return 0;
 }
 
-int HttpServer::__setup()
+void HttpServer::_run_server_ssl()
 {
-    if (this->__loadEnv() > 1) throw std::runtime_error("Error: loadEnv failed");
-    // Configurar el servidor
-    for (auto &data : data_)
+
+    // ========== 2. Set up the server to accept new connections ========== //
+    server_->on<uvw::ListenEvent>([http_ = this, self = this->tlsServer_](const uvw::ListenEvent &, uvw::TCPHandle &srv)
+                                  {
+        auto client = srv.loop().resource<uvw::TCPHandle>();
+        srv.accept(*client);
+
+        server_types::HttpClient client_data = {
+            .client = client,
+            .keep_alive = true,
+            .n_requests = 0,
+            .timeout = srv.loop().resource<uvw::TimerHandle>()
+        };
+
+        http_->clients[client.get()] = client_data;
+
+        auto tlsConn = TlsConnection::createClient(client, self->sslCtx_);
+
+        tlsConn
+        ->on<TlsServer::TlsErrorEvent>(
+            [http_](const TlsServer::TlsErrorEvent &err, TlsConnection &self)
+            {
+                http_->logger_.warning("TLS-error "
+                            + std::to_string(err.code) + " – "
+                            + err.message);
+            });
+
+        client->read();
+
+        client_data.timeout->start(uvw::TimerHandle::Time{5000}, uvw::TimerHandle::Time{0});
+        client_data.timeout->on<uvw::TimerEvent>(
+            [client_data, self, weakConn = std::weak_ptr<TlsConnection>(tlsConn)]
+            (const uvw::TimerEvent &, uvw::TimerHandle &)
+            {
+                // close the connection ssl
+                auto strong = weakConn.lock();
+                if (strong) 
+                    self->removeConnection(strong);
+                
+                strong->close();
+            });
+
+
+        tlsConn->setOnClose(
+            [http_, client, self, weakConn=std::weak_ptr<TlsConnection>(tlsConn)]
+            (int err) 
+            {
+                http_->logger_.log("Client disconnected", client->peer().ip);
+                if(auto strong = weakConn.lock()) {
+                    self->removeConnection(strong);
+                }
+                if (http_->clients.find(client.get()) != http_->clients.end())
+                    http_->clients.erase(client.get());
+            });
+
+        // Example onRead
+        tlsConn->setOnRead(
+            [http_, client, tlsConn, self]
+            (const char* data, std::size_t len) 
+            {
+                // reset timeout
+                http_->clients[client.get()].timeout->stop();
+                http_->clients[client.get()].timeout->start(uvw::TimerHandle::Time{5000}, uvw::TimerHandle::Time{0});
+
+                std::string request(data, len);
+
+                // Create a new HttpConnection instance
+                std::shared_ptr<HttpConnection> conn = std::make_shared<HttpConnection>(client, tlsConn);
+
+                // Handle the request
+                http_->_handle_request(request, conn);
+
+                http_->clients[client.get()].n_requests++;
+                if (http_->clients[client.get()].n_requests > 100)
+                {
+                    self->removeConnection(tlsConn);
+                    client->close();
+                    return;
+                }
+
+            });
+
+        client->on<uvw::ErrorEvent>(
+            [http_, client]
+            (const uvw::ErrorEvent &event, uvw::TCPHandle &handle)
+            {
+                std::string errStr = event.what();
+                if (errStr == "EPIPE" || errStr == "broken pipe") {
+                    // Not an error to kill the server; but log for debugging
+                    http_->logger_.debug("Broken pipe on client socket, ignoring.");
+                } else {
+                    http_->logger_.error("Client error: " + errStr);
+
+                    // if (http_->clients.find(client.get()) != http_->clients.end())
+                    //     http_->clients.erase(client.get());
+
+                    // Possibly close if it's a critical error
+                    // if (handle.active()) {
+                    //     handle.close();
+                    // }
+                }
+            }); 
+    });
+
+    // Handle server errors
+    this
+        ->server_
+        ->on<uvw::ErrorEvent>(
+            [this]
+            (const uvw::ErrorEvent &event, uvw::TCPHandle &)
+            { this->logger_.error("Server error: " + std::string(event.what())); });
+
+    // Start listening
+    this->server_->listen(1024);
+    this->logger_.log("Server is listening on https://" + this->ip_ + ":" + std::to_string(this->port_));
+
+    // Prepare handle to flush connections each loop iteration
+    this->tlsServer_->prepare_ = loop_->resource<uvw::PrepareHandle>();
+    this
+        ->tlsServer_
+        ->prepare_
+        ->on<uvw::PrepareEvent>(
+            [self = this->tlsServer_]
+            (const uvw::PrepareEvent &, uvw::PrepareHandle &)
+            { self->flushAllConnections(); });
+            
+    this->tlsServer_->prepare_->start();
+
+    // ========== 3. Run event loop with robust error handling ========== //
+    try
     {
-        if(data.first == "max_connections"){
-            if(std::holds_alternative<int>(data.second)) this->MAX_CONNECTIONS = std::get<int>(data.second);
-            else if(std::holds_alternative<std::string>(data.second)) this->MAX_CONNECTIONS = std::stoi(std::get<std::string>(data.second));
-            else throw std::runtime_error("Error: max_connections must be an integer");
-        }
-        else if(data.first == "secret_key"){
-            if(std::holds_alternative<std::string>(data.second)) this->idGeneratorJWT = idGenerator(std::get<std::string>(data.second));
-            else throw std::runtime_error("Error: secret_key must be a string");
-        }
-        else if(data.first == "default_session_name"){
-            if(std::holds_alternative<std::string>(data.second)) this->default_session_name = std::get<std::string>(data.second);
-            else throw std::runtime_error("Error: default_session_name must be a string");
-        }
-        else if(data.first == "not_found"){
-            if(std::holds_alternative<std::string>(data.second)) this->__default_not_found = std::get<std::string>(data.second);
-            else throw std::runtime_error("Error: not_found must be a string");
-        }
-        else if(data.first == "internal_server_error"){
-            if(std::holds_alternative<std::string>(data.second)) this->__default_internal_server_error = std::get<std::string>(data.second);
-            else throw std::runtime_error("Error: internal_server_error must be a string");
-        }
-        else if(data.first == "unauthorized"){
-            if(std::holds_alternative<std::string>(data.second)) this->__default_unauthorized = std::get<std::string>(data.second);
-            else throw std::runtime_error("Error: unauthorized must be a string");
-        }
-        else if(data.first == "bad_request")
-        {
-            if(std::holds_alternative<std::string>(data.second)) this->__default_bad_request = std::get<std::string>(data.second);
-            else throw std::runtime_error("Error: bad_request must be a string");
-        }
+        // If you want a graceful shutdown, you might loop on run() until a stop flag is set
+        this->loop_->run(); // MAYBE: while (!stop_) loop_->run<uvw::Loop::Mode::ONCE>();
     }
-
-
-    if (HTTPS)
+    catch (const std::exception &e)
     {
-        // Inicializar OpenSSL
-        SSL_library_init();
-        ssl_ctx = SSL_CTX_new(TLS_server_method());
-
-        // Cargar certificado y clave privada
-        if (SSL_CTX_use_certificate_file(ssl_ctx, context.certificate.c_str(), SSL_FILETYPE_PEM) <= 0 || !filesystem::exists(context.certificate))
-        {
-            cerr << "Error al cargar el certificado." << endl;
-            return 1;
-        }
-        if (SSL_CTX_use_PrivateKey_file(ssl_ctx, context.private_key.c_str(), SSL_FILETYPE_PEM) <= 0 || !filesystem::exists(context.private_key))
-        {
-            cerr << "Error al cargar la clave privada." << endl;
-            return 1;
-        }
+        this->logger_.error("Critical error in event loop: " + std::string(e.what()));
     }
-
-    // Crear el socket del servidor
-    if ((serverSocket = socket(AF_INET, SOCK_STREAM, 0)) == 0)
+    catch (...)
     {
-        cerr << "Error al crear el socket" << endl;
-        return 1;
+        this->logger_.error("Unknown error occurred in the event loop.");
     }
+}
 
-    // Configurar la estructura de la dirección del servidor
-    serverAddress.sin_family = AF_INET;
-    serverAddress.sin_addr.s_addr = INADDR_ANY; //////////////////////////////////////ARREGLAR
-    serverAddress.sin_port = htons(port);
-
-    // Enlazar el socket a la dirección y el puerto
-    if (bind(serverSocket, (struct sockaddr *)&serverAddress, sizeof(serverAddress)) != 0)
+void HttpServer::run()
+{
+    try
     {
-        logger.error("Error while binding the socket");
-        return 1;
+        this->_setup_server();
     }
-
-    // Escuchar las conexiones entrantes
-    if (listen(serverSocket, MAX_CONNECTIONS) < 0)
+    catch (const std::exception &ex)
     {
-        logger.error("Error while listening for incoming connections");
-        return 1;
+        this->logger_.error("Error: " + std::string(ex.what()));
     }
-    if(HTTPS)
-        cout << "Servidor https://" << host << ":" << port << " en ejecución " << endl;
-    else
-        cout << "Servidor http://" << host << ":" << port << " en ejecución " << endl;
-    return 0;
+
+    // ========== 1. Setup robust signal handling with sigaction ========== //
+    struct sigaction sa;
+    sa.sa_handler = SIG_IGN; // or a custom handler if you prefer
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+
+    if (sigaction(SIGPIPE, &sa, nullptr) < 0)
+    {
+        this->logger_.error("Failed to ignore SIGPIPE via sigaction.");
+    }
+
+    // Optionally, handle SIGTERM gracefully to allow a clean shutdown:
+    struct sigaction saTerm;
+    saTerm.sa_handler = [](int)
+    {
+        // Here you could set a global atomic flag, or directly stop your server if accessible.
+        // For demonstration, we do nothing. You might store `stopRequested = true;`
+    };
+    sigemptyset(&saTerm.sa_mask);
+    saTerm.sa_flags = 0;
+    sigaction(SIGTERM, &saTerm, nullptr);
+
+    try
+    {
+        if (this->ssl_enabled_)
+            this->_run_server_ssl();
+        else
+            this->_run_server();
+    }
+    catch (const std::exception &ex)
+    {
+        this->logger_.error("Error: " + std::string(ex.what()));
+        // if (this->ctx_)
+        // {
+        //     SSL_CTX_free(this->ctx_);
+        // }
+    }
 }
 
-std::variant<std::string, int>& HttpServer::operator[](const std::string& key) {
-    return data_[key]; 
-}
-
-
-void HttpServer::addRoute(const string &path, types::FunctionHandler handler, vector<string> methods, bool cache_route)
+std::string HttpServer::Render(const std::string &route, nlohmann::json data)
 {
-    this->routes.push_back({path, methods, std::string(), cache_route, [handler](Request &args)
-                      {
-                          return handler(args); // Call the original handler with the query and method
-                      }});
-}
-void HttpServer::addRouteFile(string endpoint, const string &extension)
-{
-    // if the route dont start with / add it
-    if(endpoint[0] != '/') endpoint = "/" + endpoint;
-
-    // if exists
-    for(auto &route : routesFile)
-        if(route.path == endpoint)
-            return;
-
-    auto it = content_type.find(extension);
-    std::string contentType = (it != content_type.end()) ? it->second : "application/force-download";
-
-    this->routesFile.push_back({endpoint, contentType});
-}
-void HttpServer::urlfor(const string &endpoint)
-{
-    size_t index = endpoint.find_last_of(".");
-    string extension = "txt";
-    if (string::npos != index)
-        extension = endpoint.substr(index + 1);
-    addRouteFile(endpoint, extension);
-}
-
-
-void HttpServer::setNotFound(const types::defaultFunctionHandler &handler)
-{
-    this->__not_found_handler = handler;
-}
-
-void HttpServer::setUnauthorized(const types::defaultFunctionHandler &handler)
-{
-    this->__unauthorized_handler = handler;
-}
-
-void HttpServer::setInternalServerError(const types::defaultFunctionHandler &handler)
-{
-    this->__internal_server_error_handler = handler;
+    return this->template_render->Render(route, data);
 }

@@ -1,8 +1,6 @@
 #ifndef IDGENERATOR_H
 #define IDGENERATOR_H
 
-
-
 #include <stdexcept>
 #include <filesystem>
 #include <stdexcept>
@@ -12,8 +10,8 @@
 #include <random>
 #include <ctime>
 #include <sstream>
-#include "url_encoding.h"
-#include "base64.h"
+#include "url_encoding.hpp"
+#include "base64.hpp"
 #include <iostream>
 
 namespace uuid
@@ -85,38 +83,40 @@ namespace crypto_lib
 
 class idGenerator
 {
-    private:
-        std::string private_key;
-    public:
-        void setPrivateKey(const std::string &private_key) { this->private_key = private_key; }
-        idGenerator(const std::string &private_key) : private_key(private_key) {}
-        static std::string generateIDstr()
-        {
-            char id[32];
-            for (size_t i = 0; i < 32; i++)
-                id[i] = static_cast<char>(std::rand() % 10) + '0';
-            return std::string(id, 32);
-        }
+private:
+    std::string private_key;
 
-        static std::string generateUUID() { return uuid::generate_uuid_v4(); }
+public:
+    void setPrivateKey(const std::string &private_key) { this->private_key = private_key; }
+    idGenerator(const std::string &private_key) : private_key(private_key) {}
+    static std::string generateIDstr()
+    {
+        char id[32];
+        for (size_t i = 0; i < 32; i++)
+            id[i] = static_cast<char>(std::rand() % 10) + '0';
+        return std::string(id, 32);
+    }
 
-        // jwt token
-        std::string generateJWT(const std::string &data) {
-            const std::string header = R"({"alg":"HS512","typ":"JWT"})";
-            const std::string payload = data;
+    static std::string generateUUID() { return uuid::generate_uuid_v4(); }
 
-            std::string header_encoded = UrlEncoding::encodeURIbase64(header);
-            std::string payload_encoded = UrlEncoding::encodeURIbase64(payload);
+    // jwt token
+    std::string generateJWT(const std::string &data)
+    {
+        const std::string header = R"({"alg":"HS512","typ":"JWT"})";
+        const std::string payload = data;
 
-            std::string signature = crypto_lib::calculateSHA512(
-                header_encoded + "." + payload_encoded + this->private_key
-            );
+        std::string header_encoded = UrlEncoding::encodeURIbase64(header);
+        std::string payload_encoded = UrlEncoding::encodeURIbase64(payload);
 
-            std::string signature_encoded = UrlEncoding::encodeURIbase64(signature);
+        std::string signature = crypto_lib::calculateSHA512(
+            header_encoded + "." + payload_encoded + this->private_key);
 
-            return header_encoded + "." + payload_encoded + "." + signature_encoded;
-        }
+        std::string signature_encoded = UrlEncoding::encodeURIbase64(signature);
 
+        return header_encoded + "." + payload_encoded + "." + signature_encoded;
+    }
+
+        //////////// TODO: CREATE A PROPER VALIDATION, THAT CHECKS THE EXPIRATION DATE, ETC
         bool verifyJWT(const std::string &token) {
             std::string header, payload, signature;
             std::istringstream token_stream(token);
@@ -124,14 +124,15 @@ class idGenerator
             std::getline(token_stream, payload, '.');
             std::getline(token_stream, signature, '.');
 
-            std::string signature_verify = crypto_lib::calculateSHA512(
-                header + "." + payload + this->private_key
-            );
+        // Recalculate the signature
+        std::string signature_verify = crypto_lib::calculateSHA512(
+            header + "." + payload + this->private_key);
 
-            std::string signature_verify_encoded = UrlEncoding::encodeURIbase64(signature_verify);
+        std::string signature_verify_encoded = UrlEncoding::encodeURIbase64(signature_verify);
 
             return signature == signature_verify_encoded;
         }
+
 };
 
 #endif
