@@ -166,6 +166,7 @@ public:
     std::string method;
     std::string route;
     std::string query;
+    std::unordered_map<std::string, std::string> url_params;
     httpHeaders headers;
 
     Content content;
@@ -173,11 +174,8 @@ public:
 
     Sessions::Session &session;
 
-    Request(Sessions::Session &session_f)
-        : session(session_f) {}
-
     Request(std::unordered_map<std::string, server_tools::ParamValue> vars_f, httpHeaders method_f, Sessions::Session &session_f, HttpRequest method)
-        : parameters(vars_f), headers(method_f), session(session_f), method(method.method), route(method.route), query(method.query)
+        : parameters(vars_f), headers(method_f), session(session_f), method(method.method), route(method.route), query(method.query), url_params(method.url_params)
     {
         if (method.content.isDict())
             form = method.content.getDict();

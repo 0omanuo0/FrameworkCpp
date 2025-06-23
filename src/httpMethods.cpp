@@ -1,8 +1,5 @@
 #include "httpMethods.hpp"
 
-
-
-
 std::string trim(const std::string &str)
 {
     auto start = std::find_if_not(str.begin(), str.end(), [](unsigned char ch)
@@ -20,23 +17,44 @@ std::string trim(const std::string &str)
 int httpHeaders::loadParams(const std::string &request)
 {
     std::smatch match;
-    const std::regex requestLineRegex(R"(^(\w+)\s+(\S+)\s+HTTP/\d\.\d(\r\n)*)");
+    const std::regex requestLineRegex(R"(^(\w+)\s+(.+)\s+HTTP\/(\d(?:\.\d)?)(\r\n)*)");
     const std::regex queryRegex(R"(^([^\?]+)(\?(.+))?$)");
 
     if (std::regex_search(request, match, requestLineRegex))
     {
         this->method = match[1];
         this->route = match[2];
+        this->http_version = match[3];
     }
 
     if (std::regex_match(this->route, match, queryRegex))
     {
         this->route = match[1];
 
-        if (match[3].matched)
+        if (match[3].matched){
             this->query = match[3];
+            std::istringstream queryStream(this->query);
+            std::string param;
+            while (std::getline(queryStream, param, '&'))
+            {
+                size_t equalsPos = param.find('=');
+                if (equalsPos != std::string::npos)
+                {
+                    std::string key = trim(param.substr(0, equalsPos));
+                    std::string value = trim(param.substr(equalsPos + 1));
+                    this->query_params[key] = value;
+                }
+                else
+                {
+                    this->query_params[trim(param)] = "";
+                }
+            }
+        }
         else
+        {
             this->query = "";
+            this->query_params.clear();
+        }
     }
 
     if (!this->route.empty() && this->route.back() == '/') // Eliminar el último carácter
@@ -64,7 +82,7 @@ void httpHeaders::__loadParams(const std::string &request)
 
         size_t paramStart = start;
         size_t paramEnd = request.find(" ", paramStart);
-        std::string param = request.substr(paramStart, paramEnd - paramStart -1);
+        std::string param = request.substr(paramStart, paramEnd - paramStart - 1);
 
         size_t valueStart = paramEnd + 1;
         size_t valueEnd = end;
@@ -134,9 +152,9 @@ void httpHeaders::__loadParams(const std::string &request)
     this->cookies = this->Headers["Cookie"].get<std::map<std::string, std::string>>();
 }
 
-Content::Content(const std::string& stringContent, const std::string& encodingType)
+Content::Content(const std::string &stringContent, const std::string &encodingType)
 {
-    if(encodingType == "application/x-www-form-urlencoded" )
+    if (encodingType == "application/x-www-form-urlencoded")
     {
         const std::regex pattern("([^=&]+)=([^&]*)");
         std::smatch matches;
@@ -152,12 +170,12 @@ Content::Content(const std::string& stringContent, const std::string& encodingTy
         this->contentData = temp_contentData;
         this->content_type = contentType::DICT;
     }
-    else if(encodingType == "application/json")
+    else if (encodingType == "application/json")
     {
         this->contentData = nlohmann::json::parse(stringContent);
         this->content_type = contentType::JSON;
     }
-    else if(encodingType == "application/octet-stream")
+    else if (encodingType == "application/octet-stream")
     {
         std::vector<char> byteContent(stringContent.begin(), stringContent.end());
         this->contentData = byteContent;
@@ -172,12 +190,11 @@ Content::Content(const std::string& stringContent, const std::string& encodingTy
 
 header httpHeaders::operator[](const std::string &key)
 {
-    if(key == "Method" || key == "method")
+    if (key == "Method" || key == "method")
         return header(this->method);
-    if(key == "Route" || key == "route")
+    if (key == "Route" || key == "route")
         return header(this->route);
-    if(key == "Query" || key == "query")
+    if (key == "Query" || key == "query")
         return header(this->query);
     return this->Headers[key];
 }
-

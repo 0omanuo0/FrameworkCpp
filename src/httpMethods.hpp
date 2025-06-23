@@ -331,6 +331,7 @@ struct HttpRequest
     std::string method;
     std::string route;
     std::string query;
+    std::unordered_map<std::string, std::string> url_params;
     Content content;
 };
 
@@ -341,7 +342,9 @@ private:
 
     std::string method;
     std::string route;
+    std::string http_version;
     std::string query;
+    std::unordered_map<std::string, std::string> query_params;
     Content body;
 
     std::map<std::string, header> Headers;
@@ -357,7 +360,9 @@ public:
             .method = method,
             .route = route,
             .query = query,
-            .content = body};
+            .url_params = query_params,
+            .content = body
+        };
     }
 
     std::map<std::string, std::string> cookies;
